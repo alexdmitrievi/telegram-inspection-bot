@@ -4,3 +4,4 @@ pytesseract
 Pillow
 pdfplumber
 openpyxl
+nest_asyncio
