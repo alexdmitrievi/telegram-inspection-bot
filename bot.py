@@ -2,6 +2,10 @@
 
 import os
 import logging
+import asyncio
+import nest_asyncio
+nest_asyncio.apply()
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
 from docx import Document
@@ -123,7 +127,6 @@ def fill_docx_by_color(template_path, replacements):
     return output_path
 
 def main():
-    import asyncio
     import os
 
     TOKEN = os.getenv("BOT_TOKEN")
@@ -154,7 +157,12 @@ def main():
             port=int(os.environ.get("PORT", 10000))
         )
 
-    asyncio.run(run())
+    import asyncio
+    import nest_asyncio
+    nest_asyncio.apply()
+    loop = asyncio.get_event_loop()
+    loop.create_task(run())
+    loop.run_forever()
 
 if __name__ == '__main__':
     main()
