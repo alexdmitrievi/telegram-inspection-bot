@@ -149,11 +149,9 @@ def main():
     async def run():
         await app.initialize()
         await app.bot.set_webhook(WEBHOOK_URL)
-        # Удаляем app.start() — run_webhook сам это делает
         await app.run_webhook(
             listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 10000)),  # Render подаёт PORT как env
-            webhook_path="/webhook"
+            port=int(os.environ.get("PORT", 10000))
         )
 
     asyncio.run(run())
