@@ -130,7 +130,6 @@ def main():
     import os
 
     TOKEN = os.getenv("BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -149,19 +148,11 @@ def main():
     )
     app.add_handler(conv)
 
-    async def run():
-        await app.initialize()
-        await app.bot.set_webhook(WEBHOOK_URL)
-        await app.run_webhook(
-            listen="0.0.0.0",
-            port=int(os.environ["PORT"])
-        )
-
     import asyncio
     import nest_asyncio
     nest_asyncio.apply()
     loop = asyncio.get_event_loop()
-    loop.create_task(run())
+    loop.create_task(app.run_polling())
     loop.run_forever()
 
 if __name__ == '__main__':
