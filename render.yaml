@@ -1,7 +1,8 @@
 services:
-  - type: web
+  - type: worker
     name: telegram-inspection-bot
     env: python
-    buildCommand: ""
-    startCommand: python bot.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot.py"
     plan: free
+
