@@ -124,8 +124,6 @@ def fill_docx_by_color(template_path, replacements):
 
 def main():
     import asyncio
-    import os
-
     TOKEN = os.getenv("BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -150,7 +148,7 @@ def main():
         await app.initialize()
         await app.bot.set_webhook(WEBHOOK_URL)
         await app.start()
-        await app.run_webhook(             # 👈 ОБЯЗАТЕЛЬНО!
+        await app.run_webhook(
             listen="0.0.0.0",
             port=10000,
             webhook_path="/webhook"
