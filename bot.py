@@ -154,7 +154,7 @@ def main():
         await app.bot.set_webhook(WEBHOOK_URL)
         await app.run_webhook(
             listen="0.0.0.0",
-            port=int(os.environ.get("PORT", 10000))
+            port=int(os.environ["PORT"])
         )
 
     import asyncio
