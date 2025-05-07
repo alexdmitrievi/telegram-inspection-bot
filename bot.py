@@ -145,11 +145,15 @@ def main():
     app.add_handler(conv)
 
     async def run():
-        await app.initialize()  # ← ВСТАВЬ ЭТУ СТРОКУ
+        await app.initialize()
         await app.bot.set_webhook(WEBHOOK_URL)
         await app.start()
-        await app.updater.start_polling()
-        await app.updater.idle()
+        await app.updater.start()   # ❌ УДАЛИ ЭТУ СТРОКУ
+        await app.run_webhook(      # ✅ ДОБАВЬ ЭТО ВМЕСТО НЕЁ
+            listen="0.0.0.0",
+            port=10000,
+            webhook_path="/webhook"
+        )
 
     asyncio.run(run())
 
