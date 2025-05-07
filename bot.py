@@ -144,15 +144,15 @@ def main():
     )
     app.add_handler(conv)
 
-    async def run():
-        await app.initialize()
-        await app.bot.set_webhook(WEBHOOK_URL)
-        await app.start()
-        await app.run_webhook(
-            listen="0.0.0.0",
-            port=10000,
-            webhook_path="/webhook"
-        )
+async def run():
+    await app.initialize()
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=10000,
+        webhook_path="/webhook"
+    )
+
 
     asyncio.run(run())
 
