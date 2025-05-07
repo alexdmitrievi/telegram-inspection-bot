@@ -145,6 +145,7 @@ def main():
     app.add_handler(conv)
 
     async def run():
+        await app.initialize()  # ← ВСТАВЬ ЭТУ СТРОКУ
         await app.bot.set_webhook(WEBHOOK_URL)
         await app.start()
         await app.updater.start_polling()
