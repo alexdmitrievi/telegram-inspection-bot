@@ -124,6 +124,8 @@ def fill_docx_by_color(template_path, replacements):
 
 def main():
     import asyncio
+    import os
+
     TOKEN = os.getenv("BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -144,15 +146,15 @@ def main():
     )
     app.add_handler(conv)
 
-async def run():
-    await app.initialize()
-    await app.bot.set_webhook(WEBHOOK_URL)
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=10000,
-        webhook_path="/webhook"
-    )
-
+    async def run():
+        await app.initialize()
+        await app.bot.set_webhook(WEBHOOK_URL)
+        # Удаляем app.start() — run_webhook сам это делает
+        await app.run_webhook(
+            listen="0.0.0.0",
+            port=int(os.environ.get("PORT", 10000)),  # Render подаёт PORT как env
+            webhook_path="/webhook"
+        )
 
     asyncio.run(run())
 
