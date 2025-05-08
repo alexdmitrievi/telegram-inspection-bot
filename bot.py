@@ -153,10 +153,10 @@ async def run():
 
     await app.initialize()
     await app.bot.set_webhook(WEBHOOK_URL)
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT
-    )
+
+    # 💡 Вместо run_webhook:
+    await app.start()
+    await asyncio.Event().wait()
 
 if __name__ == '__main__':
     asyncio.get_event_loop().create_task(run())
