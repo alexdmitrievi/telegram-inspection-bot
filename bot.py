@@ -1,58 +1,57 @@
 import os
 import logging
 import tempfile
+import pytesseract
+import pdfplumber
+import openpyxl
+from PIL import Image
+from docx import Document
+from docx.shared import RGBColor
 from fastapi import FastAPI, Request
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters, ConversationHandler
+    Application, CommandHandler, MessageHandler, ContextTypes,
+    ConversationHandler, filters
 )
 from telegram.ext.fastapi import set_webhook_on_app
-from docx import Document
-from docx.shared import RGBColor
-import pytesseract
-from PIL import Image
-import pdfplumber
-import openpyxl
 
-# Настройка логирования
+# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Константы и переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_PATH = "/webhook"
-PORT = int(os.getenv("PORT", 10000))
-
-# Состояния диалога
+# Этапы разговора
 UPLOAD, PROCESS = range(2)
 
-# Telegram-бот
-app_tg = ApplicationBuilder().token(BOT_TOKEN).build()
+# Переменные окружения
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # полный URL со слешем на конце
+PORT = int(os.getenv("PORT", 10000))
 
 # FastAPI-приложение
 app = FastAPI()
-set_webhook_on_app(app, app_tg, path=WEBHOOK_PATH)
 
-# Команда /start
+# Telegram-приложение
+telegram_app = Application.builder().token(TOKEN).build()
+set_webhook_on_app(application=telegram_app, app=app, path=WEBHOOK_PATH)
+
+# Обработчики команд и сообщений
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("🔄 Перезапустить бота")]]
-    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=markup)
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=reply_markup)
     return UPLOAD
 
-# Перезапуск
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await start(update, context)
 
-# Обработка файла
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = update.message.document or update.message.photo[-1]
-    path = tempfile.mktemp()
+    file_path = tempfile.mktemp()
     new_file = await file.get_file()
-    await new_file.download_to_drive(path)
+    await new_file.download_to_drive(file_path)
 
-    text = extract_text(path)
+    text = extract_text(file_path)
     logger.info("Извлечённый текст:\n%s", text)
 
     replacements = {
@@ -70,23 +69,32 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_document(document=open(out1, 'rb'), filename="Заявка_на_проведение_инспекции.docx")
     await update.message.reply_document(document=open(out2, 'rb'), filename="Заявление_на_осмотр.docx")
+
     return PROCESS
 
-# Парсинг текста из файла
-def extract_text(path):
-    ext = os.path.splitext(path)[-1].lower()
+# Парсинг
+
+def extract_text(file_path):
+    ext = os.path.splitext(file_path)[-1].lower()
     if ext in ['.jpg', '.jpeg', '.png']:
-        return pytesseract.image_to_string(Image.open(path), lang='rus+eng')
+        return pytesseract.image_to_string(Image.open(file_path), lang='rus+eng')
     elif ext.endswith('.pdf'):
-        with pdfplumber.open(path) as pdf:
-            return "\n".join(p.extract_text() for p in pdf.pages if p.extract_text())
+        text = ""
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return text
     elif ext.endswith('.xlsx'):
-        wb = openpyxl.load_workbook(path, data_only=True)
+        wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
-        return " ".join(str(cell) for row in sheet.iter_rows(values_only=True) for cell in row if cell)
+        values = []
+        for row in sheet.iter_rows(values_only=True):
+            values.extend([str(cell) for cell in row if cell])
+        return " ".join(values)
     return ""
 
-# Поисковые функции
 def find_line_containing(text, keyword):
     for line in text.splitlines():
         if keyword.lower() in line.lower():
@@ -104,7 +112,8 @@ def find_mass(text):
     return match.group(1) if match else '23220'
 
 def find_vehicle_number(text):
-    return find_line_containing(text, 'W') or '01W353JC/017827BA'
+    match = find_line_containing(text, 'W')
+    return match if match else '01W353JC/017827BA'
 
 def find_contract(text):
     return find_line_containing(text, 'контракт') or 'ROM-2 от 23.04.2025 г.'
@@ -115,14 +124,14 @@ def find_sender(text):
 def find_invoice(text):
     return find_line_containing(text, 'инвойс') or 'ИНВОЙС RTRZ-64 от 03.05.2025'
 
-# Заполнение шаблона Word
 def fill_docx_by_color(template_path, replacements):
     doc = Document(template_path)
     for para in doc.paragraphs:
         for run in para.runs:
             if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                 for key, val in replacements.items():
-                    run.text = run.text.replace(key, val)
+                    if key in run.text:
+                        run.text = run.text.replace(key, val)
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -130,13 +139,14 @@ def fill_docx_by_color(template_path, replacements):
                     for run in para.runs:
                         if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                             for key, val in replacements.items():
-                                run.text = run.text.replace(key, val)
-    output = tempfile.mktemp(suffix=".docx")
-    doc.save(output)
-    return output
+                                if key in run.text:
+                                    run.text = run.text.replace(key, val)
+    output_path = tempfile.mktemp(suffix='.docx')
+    doc.save(output_path)
+    return output_path
 
-# Настройка ConversationHandler
-conv = ConversationHandler(
+# Регистрация обработчиков
+telegram_app.add_handler(ConversationHandler(
     entry_points=[CommandHandler("start", start)],
     states={
         UPLOAD: [
@@ -147,6 +157,11 @@ conv = ConversationHandler(
             MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
         ]
     },
-    fallbacks=[CommandHandler("start", start)],
-)
-app_tg.add_handler(conv)
+    fallbacks=[CommandHandler("start", start)]
+))
+
+# Запуск Uvicorn
+if __name__ == '__main__':
+    import uvicorn
+    logger.info("Запуск через Uvicorn на порту %s", PORT)
+    uvicorn.run("bot:app", host="0.0.0.0", port=PORT)
