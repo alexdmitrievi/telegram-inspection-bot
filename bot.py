@@ -1,8 +1,7 @@
-
 import os
 import logging
 import tempfile
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ContextTypes, filters, ConversationHandler
@@ -13,62 +12,64 @@ from docx.shared import RGBColor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TEMPLATE_PATHS = [
+TEMPLATES = [
     "Заявка_на_проведение_инспекции.docx",
     "Заявление_на_осмотр.docx"
 ]
 
-FILLING, = range(1)
+FILLING = 0
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    context.user_data["template_index"] = 0
     context.user_data["replacements"] = {}
-    context.user_data["documents"] = TEMPLATE_PATHS.copy()
-    context.user_data["current_doc"] = 0
-    return await process_next_document(update, context)
+    context.user_data["fields"] = []
+    context.user_data["current"] = 0
 
-async def process_next_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data["current_doc"] >= len(context.user_data["documents"]):
-        await update.message.reply_text("Все шаблоны успешно заполнены!")
+    await update.message.reply_text("Добро пожаловать! Сейчас вы будете поочерёдно заполнять два шаблона.")
+    return await process_next_template(update, context)
+
+async def process_next_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data["template_index"] >= len(TEMPLATES):
+        await update.message.reply_text("Все документы заполнены.")
         return ConversationHandler.END
 
-    current_template = context.user_data["documents"][context.user_data["current_doc"]]
-    context.user_data["fields"] = extract_red_text(current_template)
-    context.user_data["current_field"] = 0
+    template_path = TEMPLATES[context.user_data["template_index"]]
+    fields = extract_red_text(template_path)
+    context.user_data["fields"] = fields
+    context.user_data["current"] = 0
+    context.user_data["template_path"] = template_path
+    context.user_data["replacements"] = {}
 
-    if not context.user_data["fields"]:
-        await update.message.reply_text(f"В шаблоне {current_template} нет полей для заполнения.")
-        context.user_data["current_doc"] += 1
-        return await process_next_document(update, context)
+    if not fields:
+        await update.message.reply_text(f"В шаблоне «{template_path}» не найдено полей для заполнения.")
+        context.user_data["template_index"] += 1
+        return await process_next_template(update, context)
 
-    await update.message.reply_text(f"Заполняем шаблон: {current_template}")
+    await update.message.reply_text(f"Шаблон: {template_path}. Найдено полей: {len(fields)}.")
     return await ask_next_field(update, context)
 
 async def ask_next_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fields = context.user_data["fields"]
-    current = context.user_data["current_field"]
+    current = context.user_data["current"]
 
     if current >= len(fields):
-        current_template = context.user_data["documents"][context.user_data["current_doc"]]
-        output_path = fill_docx(current_template, context.user_data["replacements"])
-        await update.message.reply_document(document=open(output_path, "rb"), filename=f"{os.path.basename(current_template)}")
-        context.user_data["current_doc"] += 1
-        return await process_next_document(update, context)
+        output_path = fill_docx(context.user_data["template_path"], context.user_data["replacements"])
+        await update.message.reply_document(document=open(output_path, "rb"))
+        context.user_data["template_index"] += 1
+        return await process_next_template(update, context)
 
     field = fields[current]
     await update.message.reply_text(f"Введите значение для поля: «{field}»")
     return FILLING
 
 async def receive_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    current = context.user_data["current_field"]
+    current = context.user_data["current"]
     fields = context.user_data["fields"]
     value = update.message.text
     context.user_data["replacements"][fields[current]] = value
-    context.user_data["current_field"] += 1
+    context.user_data["current"] += 1
     return await ask_next_field(update, context)
-
-async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await start(update, context)
 
 def extract_red_text(path):
     doc = Document(path)
@@ -117,22 +118,20 @@ def main():
     TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
 
+    app.bot.set_my_commands([
+        BotCommand("start", "Начать заполнение шаблонов")
+    ])
+
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
-        states={FILLING: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_field)]},
-        fallbacks=[MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)],
+        states={
+            FILLING: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_field)],
+        },
+        fallbacks=[],
     )
+
     app.add_handler(conv)
-
-    async def run():
-        await app.bot.set_my_commands([("start", "Запустить бота")])
-        await app.initialize()
-        await app.start()
-        await app.updater.start_polling()
-        await app.updater.idle()
-
-    import asyncio
-    asyncio.run(run())
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
