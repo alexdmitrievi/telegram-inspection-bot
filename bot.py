@@ -2,12 +2,11 @@ import os
 import logging
 import asyncio
 import tempfile
-
-import nest_asyncio
-nest_asyncio.apply()
-
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ContextTypes, filters, ConversationHandler
+)
 from docx import Document
 from docx.shared import RGBColor
 import pytesseract
@@ -125,13 +124,15 @@ def fill_docx_by_color(template_path, replacements):
     doc.save(output_path)
     return output_path
 
-def main():
+async def run():
     TOKEN = os.getenv("BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 10000))
 
     if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
         raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
+
+    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -150,15 +151,14 @@ def main():
     )
     app.add_handler(conv)
 
-    async def run():
-        await app.initialize()
-        await app.bot.set_webhook(WEBHOOK_URL)
-        await app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT
-        )
-
-    asyncio.run(run())
+    await app.initialize()
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT
+    )
 
 if __name__ == '__main__':
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run())
+
