@@ -2,13 +2,11 @@ import os
 import logging
 import asyncio
 import tempfile
-
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, ConversationHandler, filters
+    ContextTypes, filters, ConversationHandler
 )
-
 from docx import Document
 from docx.shared import RGBColor
 import pytesseract
@@ -52,8 +50,9 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     out1 = fill_docx_by_color("Заявка на проведение инспекции лук 353.docx", replacements)
     out2 = fill_docx_by_color("Заявление на осмотр 354 153.docx", replacements)
 
-    await update.message.reply_document(open(out1, 'rb'), filename="Заявка_на_проведение_инспекции.docx")
-    await update.message.reply_document(open(out2, 'rb'), filename="Заявление_на_осмотр.docx")
+    await update.message.reply_document(document=open(out1, 'rb'), filename="Заявка_на_проведение_инспекции.docx")
+    await update.message.reply_document(document=open(out2, 'rb'), filename="Заявление_на_осмотр.docx")
+
     return PROCESS
 
 def extract_text(file_path):
@@ -61,15 +60,27 @@ def extract_text(file_path):
     if ext in ['.jpg', '.jpeg', '.png']:
         return pytesseract.image_to_string(Image.open(file_path), lang='rus+eng')
     elif ext.endswith('.pdf'):
+        text = ""
         with pdfplumber.open(file_path) as pdf:
-            return "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+        return text
     elif ext.endswith('.xlsx'):
         wb = openpyxl.load_workbook(file_path, data_only=True)
-        return " ".join(str(cell) for row in wb.active.iter_rows(values_only=True) for cell in row if cell)
+        sheet = wb.active
+        values = []
+        for row in sheet.iter_rows(values_only=True):
+            values.extend([str(cell) for cell in row if cell])
+        return " ".join(values)
     return ""
 
 def find_line_containing(text, keyword):
-    return next((line.strip() for line in text.splitlines() if keyword.lower() in line.lower()), None)
+    for line in text.splitlines():
+        if keyword.lower() in line.lower():
+            return line.strip()
+    return None
 
 def find_code(text):
     import re
@@ -82,7 +93,8 @@ def find_mass(text):
     return match.group(1) if match else '23220'
 
 def find_vehicle_number(text):
-    return find_line_containing(text, 'W') or '01W353JC/017827BA'
+    match = find_line_containing(text, 'W')
+    return match if match else '01W353JC/017827BA'
 
 def find_contract(text):
     return find_line_containing(text, 'контракт') or 'ROM-2 от 23.04.2025 г.'
@@ -114,7 +126,7 @@ def fill_docx_by_color(template_path, replacements):
     doc.save(output_path)
     return output_path
 
-async def run():
+async def main():
     TOKEN = os.getenv("BOT_TOKEN")
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 10000))
@@ -122,7 +134,6 @@ async def run():
     if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
         raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
 
-    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -140,10 +151,12 @@ async def run():
     )
     app.add_handler(conv)
 
+    print(f"✅ Webhook: {WEBHOOK_URL}")
+
     await app.initialize()
     await app.bot.set_webhook(WEBHOOK_URL)
     await app.start()
-    await asyncio.Event().wait()  # Бесконечное ожидание
+    await asyncio.Event().wait()
 
-if __name__ == "__main__":
-    asyncio.run(run())
+if __name__ == '__main__':
+    asyncio.run(main())
