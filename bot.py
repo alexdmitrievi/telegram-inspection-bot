@@ -2,11 +2,13 @@ import os
 import logging
 import asyncio
 import tempfile
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters, ConversationHandler
+    ContextTypes, ConversationHandler, filters
 )
+
 from docx import Document
 from docx.shared import RGBColor
 import pytesseract
@@ -50,9 +52,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     out1 = fill_docx_by_color("Заявка на проведение инспекции лук 353.docx", replacements)
     out2 = fill_docx_by_color("Заявление на осмотр 354 153.docx", replacements)
 
-    await update.message.reply_document(document=open(out1, 'rb'), filename="Заявка_на_проведение_инспекции.docx")
-    await update.message.reply_document(document=open(out2, 'rb'), filename="Заявление_на_осмотр.docx")
-
+    await update.message.reply_document(open(out1, 'rb'), filename="Заявка_на_проведение_инспекции.docx")
+    await update.message.reply_document(open(out2, 'rb'), filename="Заявление_на_осмотр.docx")
     return PROCESS
 
 def extract_text(file_path):
@@ -61,18 +62,14 @@ def extract_text(file_path):
         return pytesseract.image_to_string(Image.open(file_path), lang='rus+eng')
     elif ext.endswith('.pdf'):
         with pdfplumber.open(file_path) as pdf:
-            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+            return "\n".join(page.extract_text() for page in pdf.pages if page.extract_text())
     elif ext.endswith('.xlsx'):
         wb = openpyxl.load_workbook(file_path, data_only=True)
-        sheet = wb.active
-        return " ".join(str(cell) for row in sheet.iter_rows(values_only=True) for cell in row if cell)
+        return " ".join(str(cell) for row in wb.active.iter_rows(values_only=True) for cell in row if cell)
     return ""
 
 def find_line_containing(text, keyword):
-    for line in text.splitlines():
-        if keyword.lower() in line.lower():
-            return line.strip()
-    return None
+    return next((line.strip() for line in text.splitlines() if keyword.lower() in line.lower()), None)
 
 def find_code(text):
     import re
@@ -102,7 +99,8 @@ def fill_docx_by_color(template_path, replacements):
         for run in para.runs:
             if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                 for key, val in replacements.items():
-                    run.text = run.text.replace(key, val)
+                    if key in run.text:
+                        run.text = run.text.replace(key, val)
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -110,14 +108,22 @@ def fill_docx_by_color(template_path, replacements):
                     for run in para.runs:
                         if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                             for key, val in replacements.items():
-                                run.text = run.text.replace(key, val)
-    path = tempfile.mktemp(suffix=".docx")
-    doc.save(path)
-    return path
+                                if key in run.text:
+                                    run.text = run.text.replace(key, val)
+    output_path = tempfile.mktemp(suffix='.docx')
+    doc.save(output_path)
+    return output_path
 
-async def main():
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+async def run():
+    TOKEN = os.getenv("BOT_TOKEN")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 10000))
+
+    if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
+        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
+
+    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
+    app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -134,7 +140,10 @@ async def main():
     )
     app.add_handler(conv)
 
-    await app.run_polling()
+    await app.initialize()
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.start()
+    await asyncio.Event().wait()  # Бесконечное ожидание
 
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(run())
