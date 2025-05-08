@@ -18,6 +18,8 @@ import openpyxl
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+await app.bot.set_webhook(WEBHOOK_URL)
+
 UPLOAD, PROCESS = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,6 +132,9 @@ def main():
     WEBHOOK_URL = os.getenv("WEBHOOK_URL")
     PORT = int(os.environ.get("PORT", 10000))
 
+    if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
+        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -152,7 +157,7 @@ def main():
         await app.bot.set_webhook(WEBHOOK_URL)
         await app.run_webhook(
             listen="0.0.0.0",
-            port=PORT,
+            port=PORT
         )
 
     asyncio.run(run())
