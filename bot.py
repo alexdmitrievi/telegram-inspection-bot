@@ -1,45 +1,31 @@
 import os
 import logging
 import tempfile
-import pytesseract
-import pdfplumber
-import openpyxl
-from PIL import Image
-from docx import Document
-from docx.shared import RGBColor
-from fastapi import FastAPI, Request
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes,
-    ConversationHandler, filters
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ContextTypes, filters, ConversationHandler
 )
-from telegram.ext.fastapi import set_webhook_on_app
+from docx import Document
+from docx.shared import RGBColor
+import pytesseract
+from PIL import Image
+import pdfplumber
+import openpyxl
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Этапы разговора
 UPLOAD, PROCESS = range(2)
 
-# Переменные окружения
-TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # полный URL со слешем на конце
-PORT = int(os.getenv("PORT", 10000))
-
-# FastAPI-приложение
-app = FastAPI()
-
-# Telegram-приложение
-telegram_app = Application.builder().token(TOKEN).build()
-set_webhook_on_app(application=telegram_app, app=app, path=WEBHOOK_PATH)
-
-# Обработчики команд и сообщений
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("🔄 Перезапустить бота")]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.",
+        reply_markup=reply_markup
+    )
     return UPLOAD
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,8 +58,6 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return PROCESS
 
-# Парсинг
-
 def extract_text(file_path):
     ext = os.path.splitext(file_path)[-1].lower()
     if ext in ['.jpg', '.jpeg', '.png']:
@@ -82,9 +66,7 @@ def extract_text(file_path):
         text = ""
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
+                text += page.extract_text() + "\n"
         return text
     elif ext.endswith('.xlsx'):
         wb = openpyxl.load_workbook(file_path, data_only=True)
@@ -112,8 +94,7 @@ def find_mass(text):
     return match.group(1) if match else '23220'
 
 def find_vehicle_number(text):
-    match = find_line_containing(text, 'W')
-    return match if match else '01W353JC/017827BA'
+    return find_line_containing(text, 'W') or '01W353JC/017827BA'
 
 def find_contract(text):
     return find_line_containing(text, 'контракт') or 'ROM-2 от 23.04.2025 г.'
@@ -145,23 +126,34 @@ def fill_docx_by_color(template_path, replacements):
     doc.save(output_path)
     return output_path
 
-# Регистрация обработчиков
-telegram_app.add_handler(ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        UPLOAD: [
-            MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file),
-            MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart),
-        ],
-        PROCESS: [
-            MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
-        ]
-    },
-    fallbacks=[CommandHandler("start", start)]
-))
+async def main():
+    TOKEN = os.getenv("BOT_TOKEN")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 10000))
 
-# Запуск Uvicorn
+    if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
+        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            UPLOAD: [
+                MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file),
+                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart),
+            ],
+            PROCESS: [
+                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+    app.add_handler(conv_handler)
+
+    await app.initialize()
+    await app.bot.set_webhook(WEBHOOK_URL)
+    await app.run_webhook(listen="0.0.0.0", port=PORT)
+
 if __name__ == '__main__':
-    import uvicorn
-    logger.info("Запуск через Uvicorn на порту %s", PORT)
-    uvicorn.run("bot:app", host="0.0.0.0", port=PORT)
+    asyncio.run(main())
