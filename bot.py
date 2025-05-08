@@ -137,20 +137,7 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            UPLOAD: [
-                MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file),
-                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart),
-            ],
-            PROCESS: [
-                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
-            ]
-        },
-        fallbacks=[CommandHandler("start", start)],
-    )
-    app.add_handler(conv)
+    # ... добавление handlers ...
 
     async def run():
         await app.initialize()
