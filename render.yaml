@@ -2,11 +2,12 @@ services:
   - type: worker
     name: telegram-inspection-bot
     env: python
+    plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot.py"
-    plan: free
     envVars:
       - key: BOT_TOKEN
         value: <твой_токен_бота>
+
 
 
