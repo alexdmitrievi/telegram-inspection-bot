@@ -9,6 +9,3 @@ services:
       - key: BOT_TOKEN
         value: <твой_токен_бота>
 
-
-
-

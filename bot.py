@@ -1,10 +1,14 @@
 import os
 import logging
+import asyncio
+import json
 import tempfile
+import re
+from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters, ConversationHandler
+    ContextTypes, ConversationHandler, filters
 )
 from docx import Document
 from docx.shared import RGBColor
@@ -12,126 +16,149 @@ from docx.shared import RGBColor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TEMPLATES = [
-    "Заявка_на_проведение_инспекции.docx",
-    "Заявление_на_осмотр.docx"
+(ASKING, CONFIRMING) = range(2)
+
+# Вопросы для анкеты
+questions = [
+    "Введите код ТН ВЭД",
+    "Введите массу партии в тоннах",
+    "Введите количество мест",
+    "Введите дату и номер контракта/распоряжения на поставку",
+    "Введите наименование отправителя",
+    "Введите сопроводительные документы (инвойс и CMR)",
+    "Введите дополнительные сведения",
+    "Введите предполагаемую дату начала инспекции",
+    "Введите наименование товара",
+    "Введите дату исходящего письма"
 ]
 
-FILLING = 0
+# Переменные в шаблонах
+mapping_keys = [
+    "{{TNVED_CODE}}", "{{WEIGHT}}", "{{PLACES}}", "{{CONTRACT_INFO}}",
+    "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{INSPECTION_DATE}}",
+    "{{PRODUCT_NAME}}", "{{DATE}}"
+]
+
+profile_path = "user_profile.json"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    context.user_data["template_index"] = 0
-    context.user_data["replacements"] = {}
-    context.user_data["fields"] = []
-    context.user_data["current"] = 0
+    context.user_data['answers'] = []
+    context.user_data['step'] = 0
+    await update.message.reply_text(questions[0], reply_markup=ReplyKeyboardMarkup(
+        [[KeyboardButton("🔄 Перезапустить бота")]], resize_keyboard=True))
+    return ASKING
 
-    await update.message.reply_text("Добро пожаловать! Сейчас вы будете поочерёдно заполнять два шаблона.")
-    return await process_next_template(update, context)
+async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "🔄 Перезапустить бота":
+        return await start(update, context)
 
-async def process_next_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data["template_index"] >= len(TEMPLATES):
-        await update.message.reply_text("Все документы заполнены.")
+    step = context.user_data['step']
+    answer = validate_input(text, step)
+    context.user_data['answers'].append(answer)
+    context.user_data['step'] += 1
+
+    if context.user_data['step'] < len(questions):
+        await update.message.reply_text(questions[context.user_data['step']])
+        return ASKING
+    else:
+        summary = "\n".join([
+            f"{questions[i]}\n➡ {context.user_data['answers'][i]}"
+            for i in range(len(questions))
+        ])
+        await update.message.reply_text(f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)")
+        return CONFIRMING
+
+async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    if "да" in text:
+        answers = context.user_data['answers']
+        save_profile(answers)
+        output_files = generate_docs(answers)
+        for path in output_files:
+            await update.message.reply_document(document=open(path, 'rb'))
         return ConversationHandler.END
+    else:
+        await update.message.reply_text("Ок, начнём заново. Введите первую информацию:")
+        context.user_data['answers'] = []
+        context.user_data['step'] = 0
+        return ASKING
 
-    template_path = TEMPLATES[context.user_data["template_index"]]
-    fields = extract_red_text(template_path)
-    context.user_data["fields"] = fields
-    context.user_data["current"] = 0
-    context.user_data["template_path"] = template_path
-    context.user_data["replacements"] = {}
+def validate_input(text, step):
+    try:
+        if step == 1:  # масса
+            return re.sub(r"[^0-9.,]", "", text).replace(",", ".")
+        elif step == 2:  # кол-во мест
+            return re.sub(r"\D", "", text)
+        elif step in [7, 9]:  # даты
+            d = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", text)
+            return datetime.strptime(d.group(), "%d.%m.%Y").strftime("%d.%m.%Y") if d else text
+        elif step == 4:  # отправитель
+            return text.upper()
+        else:
+            return text.strip().capitalize()
+    except Exception as e:
+        logger.error(f"Ошибка валидации: {e}")
+        return text.strip()
 
-    if not fields:
-        await update.message.reply_text(f"В шаблоне «{template_path}» не найдено полей для заполнения.")
-        context.user_data["template_index"] += 1
-        return await process_next_template(update, context)
+def save_profile(answers):
+    try:
+        with open(profile_path, 'w', encoding='utf-8') as f:
+            json.dump({k: v for k, v in zip(mapping_keys, answers)}, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении профиля: {e}")
 
-    await update.message.reply_text(f"Шаблон: {template_path}. Найдено полей: {len(fields)}.")
-    return await ask_next_field(update, context)
+def generate_docs(answers):
+    replacements = dict(zip(mapping_keys, answers))
+    template_files = ["Заявка на проведение инспекции.docx", "Заявление на осмотр.docx"]
+    result_files = []
 
-async def ask_next_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    fields = context.user_data["fields"]
-    current = context.user_data["current"]
-
-    if current >= len(fields):
-        output_path = fill_docx(context.user_data["template_path"], context.user_data["replacements"])
-        await update.message.reply_document(document=open(output_path, "rb"))
-        context.user_data["template_index"] += 1
-        return await process_next_template(update, context)
-
-    field = fields[current]
-    await update.message.reply_text(f"Введите значение для поля: «{field}»")
-    return FILLING
-
-async def receive_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    current = context.user_data["current"]
-    fields = context.user_data["fields"]
-    value = update.message.text
-    context.user_data["replacements"][fields[current]] = value
-    context.user_data["current"] += 1
-    return await ask_next_field(update, context)
-
-def extract_red_text(path):
-    doc = Document(path)
-    fields = set()
-
-    def collect_red_runs(paragraphs):
-        for p in paragraphs:
-            for run in p.runs:
-                if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
-                    fields.add(run.text.strip())
-
-    for para in doc.paragraphs:
-        collect_red_runs([para])
-
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                collect_red_runs(cell.paragraphs)
-
-    return list(fields)
-
-def fill_docx(template_path, replacements):
-    doc = Document(template_path)
-
-    def replace_runs(paragraphs):
-        for p in paragraphs:
-            for run in p.runs:
+    for template_path in template_files:
+        doc = Document(template_path)
+        for para in doc.paragraphs:
+            for run in para.runs:
                 if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                     for key, val in replacements.items():
-                        if run.text.strip() == key:
-                            run.text = val
+                        if key in run.text:
+                            run.text = run.text.replace(key, val)
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
+                                for key, val in replacements.items():
+                                    if key in run.text:
+                                        run.text = run.text.replace(key, val)
+        output_path = tempfile.mktemp(suffix=".docx")
+        doc.save(output_path)
+        result_files.append(output_path)
 
-    for para in doc.paragraphs:
-        replace_runs([para])
+    return result_files
 
-    for table in doc.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                replace_runs(cell.paragraphs)
-
-    output_path = tempfile.mktemp(suffix=".docx")
-    doc.save(output_path)
-    return output_path
-
-def main():
+async def run():
     TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.bot.set_my_commands([
-        BotCommand("start", "Начать заполнение шаблонов")
-    ])
+    await app.bot.set_my_commands([BotCommand("start", "Начать заполнение заявки")])
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            FILLING: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_field)],
+            ASKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)],
+            CONFIRMING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)]
         },
-        fallbacks=[],
+        fallbacks=[MessageHandler(filters.Regex("🔄 Перезапустить бота"), start)]
     )
 
     app.add_handler(conv)
-    app.run_polling()
 
-if __name__ == "__main__":
-    main()
+    await app.initialize()
+    await app.start()
+    await asyncio.Event().wait()
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        logger.error(f"Критическая ошибка запуска: {e}")
