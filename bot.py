@@ -1,8 +1,6 @@
 import os
 import logging
-import asyncio
 import tempfile
-
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -23,10 +21,7 @@ UPLOAD, PROCESS = range(2)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("🔄 Перезапустить бота")]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text(
-        "Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=reply_markup)
     return UPLOAD
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -127,16 +122,8 @@ def fill_docx_by_color(template_path, replacements):
     doc.save(output_path)
     return output_path
 
-async def main():
+if __name__ == '__main__':
     TOKEN = os.getenv("BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    PORT = int(os.environ.get("PORT", 10000))
-
-    if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
-        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
-
-    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv = ConversationHandler(
@@ -152,13 +139,6 @@ async def main():
         },
         fallbacks=[CommandHandler("start", start)],
     )
+
     app.add_handler(conv)
-
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL
-    )
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    app.run_polling()
