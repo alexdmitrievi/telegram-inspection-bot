@@ -155,5 +155,12 @@ async def main():
         port=PORT,
     )
 
+# ... (весь код как раньше остаётся без изменений) ...
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    import nest_asyncio
+    nest_asyncio.apply()
+
+    asyncio.get_event_loop().create_task(main())
+    asyncio.get_event_loop().run_forever()
+
