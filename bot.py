@@ -18,8 +18,6 @@ import openpyxl
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-await app.bot.set_webhook(WEBHOOK_URL)
-
 UPLOAD, PROCESS = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
