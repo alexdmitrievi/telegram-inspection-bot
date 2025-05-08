@@ -12,6 +12,7 @@ import pytesseract
 from PIL import Image
 import pdfplumber
 import openpyxl
+from telegram import BotCommand
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -142,3 +143,41 @@ if __name__ == '__main__':
 
     app.add_handler(conv)
     app.run_polling()
+
+if __name__ == '__main__':
+    TOKEN = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            UPLOAD: [
+                MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file),
+                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart),
+            ],
+            PROCESS: [
+                MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
+            ]
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+
+    app.add_handler(conv)
+    app.add_handler(CommandHandler("restart", restart))
+
+    # Установка Telegram-меню
+    async def set_commands():
+        await app.bot.set_my_commands([
+            BotCommand("start", "Запустить бота"),
+            BotCommand("restart", "Перезапустить бота")
+        ])
+
+    async def main():
+        await set_commands()
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
+        await app.updater.idle()
+
+    import asyncio
+    asyncio.run(main())
