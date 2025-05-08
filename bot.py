@@ -1,7 +1,6 @@
 import os
 import logging
 import tempfile
-import asyncio
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -13,6 +12,7 @@ import pytesseract
 from PIL import Image
 import pdfplumber
 import openpyxl
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,10 +22,7 @@ UPLOAD, PROCESS = range(2)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("🔄 Перезапустить бота")]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text(
-        "Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=reply_markup)
     return UPLOAD
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,7 +150,10 @@ async def main():
 
     await app.initialize()
     await app.bot.set_webhook(WEBHOOK_URL)
-    await app.run_webhook(listen="0.0.0.0", port=PORT)
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+    )
 
 if __name__ == '__main__':
     asyncio.run(main())
