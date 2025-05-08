@@ -1,6 +1,8 @@
 import os
 import logging
+import asyncio
 import tempfile
+
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -12,7 +14,6 @@ import pytesseract
 from PIL import Image
 import pdfplumber
 import openpyxl
-import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +23,10 @@ UPLOAD, PROCESS = range(2)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("🔄 Перезапустить бота")]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text("Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "Добро пожаловать! Пожалуйста, отправьте инвойс, CMR или TIR.",
+        reply_markup=reply_markup
+    )
     return UPLOAD
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -131,9 +135,11 @@ async def main():
     if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
         raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
 
+    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
+    conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             UPLOAD: [
@@ -142,25 +148,17 @@ async def main():
             ],
             PROCESS: [
                 MessageHandler(filters.Regex("🔄 Перезапустить бота"), restart)
-            ],
+            ]
         },
         fallbacks=[CommandHandler("start", start)],
     )
-    app.add_handler(conv_handler)
+    app.add_handler(conv)
 
-    await app.initialize()
-    await app.bot.set_webhook(WEBHOOK_URL)
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
+        webhook_url=WEBHOOK_URL
     )
 
-# ... (весь код как раньше остаётся без изменений) ...
-
 if __name__ == '__main__':
-    import nest_asyncio
-    nest_asyncio.apply()
-
-    asyncio.get_event_loop().create_task(main())
-    asyncio.get_event_loop().run_forever()
-
+    asyncio.run(main())
