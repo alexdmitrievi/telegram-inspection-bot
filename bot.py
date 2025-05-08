@@ -60,18 +60,12 @@ def extract_text(file_path):
     if ext in ['.jpg', '.jpeg', '.png']:
         return pytesseract.image_to_string(Image.open(file_path), lang='rus+eng')
     elif ext.endswith('.pdf'):
-        text = ""
         with pdfplumber.open(file_path) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() + "\n"
-        return text
+            return "\n".join(page.extract_text() or "" for page in pdf.pages)
     elif ext.endswith('.xlsx'):
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
-        values = []
-        for row in sheet.iter_rows(values_only=True):
-            values.extend([str(cell) for cell in row if cell])
-        return " ".join(values)
+        return " ".join(str(cell) for row in sheet.iter_rows(values_only=True) for cell in row if cell)
     return ""
 
 def find_line_containing(text, keyword):
@@ -91,8 +85,7 @@ def find_mass(text):
     return match.group(1) if match else '23220'
 
 def find_vehicle_number(text):
-    match = find_line_containing(text, 'W')
-    return match if match else '01W353JC/017827BA'
+    return find_line_containing(text, 'W') or '01W353JC/017827BA'
 
 def find_contract(text):
     return find_line_containing(text, 'контракт') or 'ROM-2 от 23.04.2025 г.'
@@ -109,8 +102,7 @@ def fill_docx_by_color(template_path, replacements):
         for run in para.runs:
             if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                 for key, val in replacements.items():
-                    if key in run.text:
-                        run.text = run.text.replace(key, val)
+                    run.text = run.text.replace(key, val)
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -118,23 +110,14 @@ def fill_docx_by_color(template_path, replacements):
                     for run in para.runs:
                         if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
                             for key, val in replacements.items():
-                                if key in run.text:
-                                    run.text = run.text.replace(key, val)
-    output_path = tempfile.mktemp(suffix='.docx')
-    doc.save(output_path)
-    return output_path
+                                run.text = run.text.replace(key, val)
+    path = tempfile.mktemp(suffix=".docx")
+    doc.save(path)
+    return path
 
-async def run():
-    TOKEN = os.getenv("BOT_TOKEN")
-    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-    PORT = int(os.environ.get("PORT", 10000))
-
-    if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
-        raise ValueError(f"Invalid WEBHOOK_URL: {WEBHOOK_URL}")
-
-    print(f"🔧 Устанавливаю WEBHOOK: {WEBHOOK_URL}")
-
-    app = ApplicationBuilder().token(TOKEN).build()
+async def main():
+    token = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(token).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -151,14 +134,7 @@ async def run():
     )
     app.add_handler(conv)
 
-    await app.initialize()
-    await app.bot.set_webhook(WEBHOOK_URL)
-
-    # 💡 Вместо run_webhook:
-    await app.start()
-    await asyncio.Event().wait()
+    await app.run_polling()
 
 if __name__ == '__main__':
-    asyncio.get_event_loop().create_task(run())
-    asyncio.get_event_loop().run_forever()
-
+    asyncio.run(main())
