@@ -1,13 +1,12 @@
 services:
-  - type: web
+  - type: worker
     name: telegram-inspection-bot
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn bot:telegram_app --host 0.0.0.0 --port 10000"
+    startCommand: "python bot.py"
     plan: free
     envVars:
       - key: BOT_TOKEN
         value: <твой_токен_бота>
-      - key: WEBHOOK_URL
-        value: https://telegram-inspection-bot.onrender.com/webhook
+
 
