@@ -1,8 +1,13 @@
 services:
-  - type: worker
+  - type: web
     name: telegram-inspection-bot
     env: python
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot.py"
     plan: free
+    envVars:
+      - key: BOT_TOKEN
+        value: <твой_токен_бота>
+      - key: WEBHOOK_URL
+        value: https://telegram-inspection-bot.onrender.com/webhook
 

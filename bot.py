@@ -1,8 +1,8 @@
-# Финальный Telegram-бот с поддержкой PDF, Excel и генерацией двух шаблонов
-
 import os
 import logging
 import asyncio
+import tempfile
+
 import nest_asyncio
 nest_asyncio.apply()
 
@@ -12,7 +12,6 @@ from docx import Document
 from docx.shared import RGBColor
 import pytesseract
 from PIL import Image
-import tempfile
 import pdfplumber
 import openpyxl
 
@@ -127,9 +126,9 @@ def fill_docx_by_color(template_path, replacements):
     return output_path
 
 def main():
-    import os
-
     TOKEN = os.getenv("BOT_TOKEN")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+    PORT = int(os.environ.get("PORT", 10000))
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -148,12 +147,16 @@ def main():
     )
     app.add_handler(conv)
 
-    import asyncio
-    import nest_asyncio
-    nest_asyncio.apply()
-    loop = asyncio.get_event_loop()
-    loop.create_task(app.run_polling())
-    loop.run_forever()
+    async def run():
+        await app.initialize()
+        await app.bot.set_webhook(WEBHOOK_URL)
+        await app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_path="/webhook"
+        )
+
+    asyncio.run(run())
 
 if __name__ == '__main__':
     main()
