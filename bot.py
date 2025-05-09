@@ -75,14 +75,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
-    if "да" in text and context.user_data.get("cached"):
-        answers = list(context.user_data["cached"].values())
+    if "да" in text:
+        if context.user_data.get("cached"):
+            answers = list(context.user_data["cached"].values())
+        else:
+            answers = context.user_data["answers"]
+
+        save_profile(answers)
         output_files = generate_docs(answers)
         for path in output_files:
             await update.message.reply_document(document=open(path, "rb"))
         return ConversationHandler.END
-    else:
-        return await prompt_product_choice(update, context)
+
+    # если "нет" — начинаем заново
+    await update.message.reply_text("Ок, начнём заново.")
+    return await start(update, context)
 
 async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
