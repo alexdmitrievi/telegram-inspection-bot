@@ -17,17 +17,13 @@ import nest_asyncio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Получено сообщение: {update}")
-
-(ASKING, CONFIRMING) = range(2)
-
 # Справочник товаров → ТН ВЭД
 product_to_tnved = {
     "лук": "0703101900",
     "помидор": "0702000000",
     "томат": "0702000000",
     "капуста": "0701909000",
+    "капуста белокочанная": "0704901000",
     "огурец": "0707009000",
     "редис": "0706109000",
     "морковь": "0706101000",
@@ -58,7 +54,7 @@ product_to_tnved = {
     "инжир": "0804200000",
     "хурма": "0810907500",
     "лимон": "0805500000",
-    "мандарины": "0805201000",
+    "мандарины": "0805201000"
 }
 
 questions = [
@@ -96,7 +92,6 @@ async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     answers = context.user_data['answers']
 
     if step == 0:
-        # Определяем код ТН ВЭД по названию товара
         product_name = text.strip()
         tnved_code = detect_tnved_code(product_name)
         answers.append(tnved_code)        # {{TNVED_CODE}}
@@ -122,7 +117,7 @@ def detect_tnved_code(name):
     for keyword, code in product_to_tnved.items():
         if keyword in name:
             return code
-    return "0808108000"  # fallback, например яблоко
+    return "0808108000"  # fallback — яблоко
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
@@ -134,7 +129,7 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(document=open(path, 'rb'))
         return ConversationHandler.END
     else:
-        await update.message.reply_text("Ок, начнём заново. Введите первую информацию:")
+        await update.message.reply_text("Ок, начнём заново.")
         context.user_data['answers'] = []
         context.user_data['step'] = 0
         return ASKING
@@ -158,17 +153,15 @@ def validate_input(text, step):
 
 def save_profile(answers):
     try:
-        with open(profile_path, 'w', encoding='utf-8') as f:
-            json.dump({k: v for k, v in zip(mapping_keys, answers)}, f, ensure_ascii=False, indent=2)
+        with open("user_profile.json", "w", encoding="utf-8") as f:
+            json.dump(dict(zip(mapping_keys, answers)), f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"Ошибка при сохранении профиля: {e}")
 
 def generate_docs(answers):
     replacements = dict(zip(mapping_keys, answers))
-    template_files = ["Заявка на проведение инспекции.docx", "Заявление на осмотр.docx"]
     result_files = []
-
-    for template_path in template_files:
+    for template_path in ["Заявка на проведение инспекции.docx", "Заявление на осмотр.docx"]:
         doc = Document(template_path)
         for para in doc.paragraphs:
             for run in para.runs:
@@ -188,7 +181,6 @@ def generate_docs(answers):
         output_path = tempfile.mktemp(suffix=".docx")
         doc.save(output_path)
         result_files.append(output_path)
-
     return result_files
 
 async def run():
@@ -199,9 +191,9 @@ async def run():
         entry_points=[CommandHandler("start", start)],
         states={
             ASKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)],
-            CONFIRMING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)]
+            CONFIRMING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
         },
-        fallbacks=[MessageHandler(filters.Regex("🔄 Перезапустить бота"), start)]
+        fallbacks=[MessageHandler(filters.Regex("🔄 Перезапустить бота"), start)],
     )
 
     app.add_handler(conv)
