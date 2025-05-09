@@ -17,6 +17,10 @@ import nest_asyncio
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Лог всех входящих сообщений
+async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Получено сообщение: {update}")
+
 # Справочник товаров → ТН ВЭД
 product_to_tnved = {
     "лук": "0703101900",
