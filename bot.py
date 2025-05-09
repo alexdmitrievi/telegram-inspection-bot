@@ -57,6 +57,8 @@ product_to_tnved = {
     "мандарины": "0805201000"
 }
 
+(ASKING, CONFIRMING) = range(2)
+
 questions = [
     "Введите наименование товара",                      # step 0
     "Введите массу партии в тоннах",                    # step 1
