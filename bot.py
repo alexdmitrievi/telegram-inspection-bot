@@ -52,6 +52,20 @@ mapping_keys = [
     "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}", "{{PRODUCT_NAME}}"
 ]
 
+def reorder_answers(raw_answers):
+    return [
+        raw_answers[0],   # TNVED_CODE
+        raw_answers[2],   # WEIGHT
+        raw_answers[3],   # PLACES
+        raw_answers[4],   # VEHICLE
+        raw_answers[5],   # CONTRACT_INFO
+        raw_answers[6],   # SENDER
+        raw_answers[7],   # DOCS
+        raw_answers[8],   # EXTRA_INFO
+        raw_answers[9],   # DATE
+        raw_answers[1],   # PRODUCT_NAME
+    ]
+
 async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Получено сообщение: {update}")
 
@@ -79,8 +93,9 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             answers = context.user_data["answers"]
 
-        save_profile(answers)
-        output_files = generate_docs(answers)
+        reordered = reorder_answers(answers)
+        save_profile(reordered)
+        output_files = generate_docs(reordered)
         for path in output_files:
             await update.message.reply_document(document=open(path, "rb"))
         return ConversationHandler.END
@@ -127,18 +142,19 @@ async def process_step(msg, context, text):
     if context.user_data['step'] < len(questions):
         await msg.reply_text(
             questions[context.user_data['step']],
-            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить бота"]], resize_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup([["\ud83d\udd04 Перезапустить бота"]], resize_keyboard=True)
         )
         return ASKING
     else:
-        save_profile(answers)
+        reordered = reorder_answers(answers)
+        save_profile(reordered)
         summary = "\n".join([
-            f"{questions[i]}\n➡ {answers[i+1 if i == 0 else i]}"
+            f"{questions[i]}\n\u27a1 {answers[i+1 if i == 0 else i]}"
             for i in range(len(questions))
         ])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить бота"]], resize_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup([["\ud83d\udd04 Перезапустить бота"]], resize_keyboard=True)
         )
         return CONFIRMING
 
@@ -213,7 +229,7 @@ async def run():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)
             ],
         },
-        fallbacks=[MessageHandler(filters.Regex("🔄 Перезапустить бота"), start)],
+        fallbacks=[MessageHandler(filters.Regex("\ud83d\udd04 Перезапустить бота"), start)],
     )
 
     app.add_handler(conv)
