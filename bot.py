@@ -194,21 +194,28 @@ def generate_docs(answers):
     result_files = []
     for template_path in ["Заявка на проведение инспекции.docx", "Заявление на осмотр.docx"]:
         doc = Document(template_path)
+
+        # Замена в параграфах
         for para in doc.paragraphs:
-            for run in para.runs:
-                if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
-                    for key, val in replacements.items():
-                        if key in run.text:
-                            run.text = run.text.replace(key, val)
+            for key, val in replacements.items():
+                if key in para.text:
+                    inline = para.runs
+                    for i in range(len(inline)):
+                        if key in inline[i].text:
+                            inline[i].text = inline[i].text.replace(key, val)
+
+        # Замена в таблицах
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for para in cell.paragraphs:
-                        for run in para.runs:
-                            if run.font.color and run.font.color.rgb == RGBColor(255, 0, 0):
-                                for key, val in replacements.items():
-                                    if key in run.text:
-                                        run.text = run.text.replace(key, val)
+                        for key, val in replacements.items():
+                            if key in para.text:
+                                inline = para.runs
+                                for i in range(len(inline)):
+                                    if key in inline[i].text:
+                                        inline[i].text = inline[i].text.replace(key, val)
+
         output_path = tempfile.mktemp(suffix=".docx")
         doc.save(output_path)
         result_files.append(output_path)
