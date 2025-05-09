@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 (ASKING, CONFIRMING) = range(2)
 PROFILE_PATH = "user_profile.json"
 
-# Справочник товаров → ТН ВЭД
 product_to_tnved = {
     "лук": "0703101900", "помидор": "0702000000", "томат": "0702000000",
     "капуста": "0701909000", "капуста белокочанная": "0704901000", "огурец": "0707009000",
@@ -37,15 +36,15 @@ product_to_tnved = {
 }
 
 questions = [
-    "Выберите или введите наименование товара",  # step 0
-    "Введите массу партии в тоннах",             # step 1
-    "Введите количество мест",                   # step 2
-    "Введите транспортное средство",             # step 3
-    "Введите дату и номер контракта/распоряжения",  # step 4
-    "Введите наименование отправителя",          # step 5
-    "Введите сопроводительные документы (инвойс и CMR)",  # step 6
-    "Введите дополнительные сведения",           # step 7
-    "Введите дату исходящего письма и инспекции" # step 8
+    "Выберите или введите наименование товара",
+    "Введите массу партии в тоннах",
+    "Введите количество мест",
+    "Введите транспортное средство",
+    "Введите дату и номер контракта/распоряжения",
+    "Введите наименование отправителя",
+    "Введите сопроводительные документы (инвойс и CMR)",
+    "Введите дополнительные сведения",
+    "Введите дату исходящего письма и инспекции"
 ]
 
 mapping_keys = [
@@ -53,7 +52,6 @@ mapping_keys = [
     "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}", "{{PRODUCT_NAME}}"
 ]
 
-# лог входящих сообщений
 async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Получено сообщение: {update}")
 
@@ -87,7 +85,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(document=open(path, "rb"))
         return ConversationHandler.END
 
-    # если "нет" — начинаем заново
     await update.message.reply_text("Ок, начнём заново.")
     return await start(update, context)
 
@@ -108,7 +105,10 @@ async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_
     return await process_step(query.message, context, query.data)
 
 async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await process_step(update.message, context, update.message.text)
+    text = update.message.text
+    if text.lower().strip() == "🔄 перезапустить бота":
+        return await start(update, context)
+    return await process_step(update.message, context, text)
 
 async def process_step(msg, context, text):
     step = context.user_data['step']
@@ -125,17 +125,21 @@ async def process_step(msg, context, text):
     context.user_data['step'] += 1
 
     if context.user_data['step'] < len(questions):
-        await msg.reply_text(questions[context.user_data['step']])
+        await msg.reply_text(
+            questions[context.user_data['step']],
+            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить бота"]], resize_keyboard=True)
+        )
         return ASKING
     else:
-        with open(PROFILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(dict(zip(mapping_keys, answers)), f, ensure_ascii=False, indent=2)
-
+        save_profile(answers)
         summary = "\n".join([
             f"{questions[i]}\n➡ {answers[i+1 if i == 0 else i]}"
             for i in range(len(questions))
         ])
-        await msg.reply_text(f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)")
+        await msg.reply_text(
+            f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
+            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить бота"]], resize_keyboard=True)
+        )
         return CONFIRMING
 
 def detect_tnved_code(name):
@@ -150,7 +154,7 @@ def validate_input(text, step):
         if step == 1:
             return re.sub(r"[^0-9.,]", "", text).replace(",", ".")
         elif step == 2:
-            return re.sub(r"\D", "", text)  # <-- двойной \ — ошибка
+            return re.sub(r"\D", "", text)
         elif step == 8:
             d = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", text)
             return datetime.strptime(d.group(), "%d.%m.%Y").strftime("%d.%m.%Y") if d else text
@@ -161,6 +165,13 @@ def validate_input(text, step):
     except Exception as e:
         logger.error(f"Ошибка валидации: {e}")
         return text.strip()
+
+def save_profile(answers):
+    try:
+        with open(PROFILE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(dict(zip(mapping_keys, answers)), f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении профиля: {e}")
 
 def generate_docs(answers):
     replacements = dict(zip(mapping_keys, answers))
@@ -206,14 +217,13 @@ async def run():
     )
 
     app.add_handler(conv)
-    app.add_handler(MessageHandler(filters.ALL, log_all_updates))
     app.add_handler(CommandHandler("restart", start))
-
+    app.add_handler(MessageHandler(filters.ALL, log_all_updates))
 
     await app.bot.set_my_commands([
-    BotCommand("start", "Начать заполнение заявки"),
-    BotCommand("restart", "🔄 Перезапустить бота")
-])
+        BotCommand("start", "Начать заполнение заявки"),
+        BotCommand("restart", "🔄 Перезапустить бота")
+    ])
     await app.run_polling()
 
 if __name__ == '__main__':
