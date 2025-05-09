@@ -143,7 +143,7 @@ def validate_input(text, step):
         if step == 1:
             return re.sub(r"[^0-9.,]", "", text).replace(",", ".")
         elif step == 2:
-            return re.sub(r"\D", "", text)
+            return re.sub(r"\D", "", text)  # <-- двойной \ — ошибка
         elif step == 8:
             d = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", text)
             return datetime.strptime(d.group(), "%d.%m.%Y").strftime("%d.%m.%Y") if d else text
@@ -200,8 +200,13 @@ async def run():
 
     app.add_handler(conv)
     app.add_handler(MessageHandler(filters.ALL, log_all_updates))
+    app.add_handler(CommandHandler("restart", start))
 
-    await app.bot.set_my_commands([BotCommand("start", "Начать заполнение заявки")])
+
+    await app.bot.set_my_commands([
+    BotCommand("start", "Начать заполнение заявки"),
+    BotCommand("restart", "🔄 Перезапустить бота")
+])
     await app.run_polling()
 
 if __name__ == '__main__':
