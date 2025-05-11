@@ -156,12 +156,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_document(document=open(file, "rb"))
     return ConversationHandler.END
 
-    reordered = reorder_answers(answers)
-    save_profile(reordered)
-    file = generate_inspection_doc(reordered)
-    await update.message.reply_document(document=open(file, "rb"))
-    return ConversationHandler.END
-
 async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(name.capitalize(), callback_data=name)]
                 for name in list(product_to_tnved.keys())[:6]]
@@ -192,16 +186,17 @@ async def process_step(msg, context, text):
     if context.user_data["step"] < len(questions):
         await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
-    else:
-        summary = "\n".join([
-            f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
-            for i in range(len(questions))
-        ])
-        await msg.reply_text(
-            f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
-        )
-        return CONFIRMING
+else:
+    summary = "\n".join([
+        f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
+        for i in range(len(questions))
+    ])
+    context.user_data["answers"] = answers  # 💥 КРИТИЧЕСКАЯ СТРОКА
+    await msg.reply_text(
+        f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
+        reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
+    )
+    return CONFIRMING
 
 # === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
 
