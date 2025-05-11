@@ -136,23 +136,20 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     text = update.message.text.strip().lower()
+    answers = context.user_data.get("answers", {})
 
     use_cache = (
-        text in ["да", "✅ да"] and 
-        context.user_data.get("step") == 0 and 
+        text in ["да", "✅ да"] and
+        context.user_data.get("step") == 0 and
         "cached" in context.user_data
     )
 
     if use_cache:
-        answers = list(context.user_data["cached"].values())
-        context.user_data["answers"] = answers
-    else:
-        answers = context.user_data.get("answers", [])
+        answers = context.user_data["cached"]
         context.user_data["answers"] = answers
 
-    reordered = reorder_answers(answers)
-    save_profile(reordered)
-    file = generate_inspection_doc(reordered)
+    save_profile(answers)
+    file = generate_inspection_doc_from_dict(answers)
     await update.message.reply_document(document=open(file, "rb"))
     return ConversationHandler.END
 
@@ -172,31 +169,41 @@ async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_step(msg, context, text):
     step = context.user_data["step"]
-    answers = context.user_data["answers"]
+    current_answers = context.user_data.get("answers", {})
+    
+    key_order = [
+        "{{TNVED_CODE}}", "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
+        "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
+    ]
 
     if step == 0:
-        tnved_code = detect_tnved_code(text.strip())
-        answers.append(tnved_code)
-        answers.append(text.strip())
+        product = text.strip()
+        tnved = detect_tnved_code(product)
+        current_answers["{{TNVED_CODE}}"] = tnved
+        current_answers["{{PRODUCT_NAME}}"] = product
     else:
-        answers.append(text.strip())
+        current_answers[key_order[step + 1]] = text.strip()
 
+    context.user_data["answers"] = current_answers
     context.user_data["step"] += 1
 
     if context.user_data["step"] < len(questions):
         await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
     else:
-        summary = "\n".join([
-            f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
-            for i in range(len(questions))
-        ])
-        context.user_data["answers"] = answers  # 💥 сохраняем актуальные ответы
+        summary = "\n".join([f"{questions[i]}: {current_answers.get(key_order[i+1 if i == 0 else i], '—')}" for i in range(len(questions))])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
             reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
         )
         return CONFIRMING
+
+def generate_inspection_doc_from_dict(replacements):
+    doc = Document("Заявка на проведение инспекции.docx")
+    replace_all(doc, replacements)
+    out = tempfile.mktemp(suffix=".docx")
+    doc.save(out)
+    return out
 
 
 # === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
