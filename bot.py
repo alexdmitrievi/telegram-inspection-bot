@@ -187,16 +187,17 @@ async def process_step(msg, context, text):
         await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
     else:
-    summary = "\n".join([
-        f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
-        for i in range(len(questions))
-    ])
-    context.user_data["answers"] = answers  # 💥 КРИТИЧЕСКАЯ СТРОКА
-    await msg.reply_text(
-        f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-        reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
-    )
-    return CONFIRMING
+        summary = "\n".join([
+            f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
+            for i in range(len(questions))
+        ])
+        context.user_data["answers"] = answers  # 💥 сохраняем актуальные ответы
+        await msg.reply_text(
+            f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
+            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
+        )
+        return CONFIRMING
+
 
 # === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
 
