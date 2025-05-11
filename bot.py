@@ -106,12 +106,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
+    
     if "инспекц" in text:
+        context.user_data.clear()  # очищаем всё, включая старые answers и cached
         context.user_data["template"] = "inspection"
         context.user_data["answers"] = []
         context.user_data["step"] = 0
 
-        # Если есть кэш
         if os.path.exists(PROFILE_PATH):
             with open(PROFILE_PATH, "r", encoding="utf-8") as f:
                 context.user_data["cached"] = json.load(f)
@@ -120,6 +121,12 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return CONFIRMING
         else:
             return await prompt_product_choice(update, context)
+
+    elif "ввести заново" in text:
+        context.user_data["answers"] = []
+        context.user_data["step"] = 0
+        return await prompt_product_choice(update, context)
+
     else:
         context.user_data["template"] = "statement"
         context.user_data["blocks"] = []
