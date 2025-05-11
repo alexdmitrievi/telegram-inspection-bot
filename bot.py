@@ -64,19 +64,24 @@ def save_profile(data):
         json.dump(dict(zip(mapping_keys, data)), f, ensure_ascii=False, indent=2)
 
 def replace_all(doc, replacements):
-    for p in doc.paragraphs:
+    def replace_in_paragraph(p):
+        full_text = "".join(run.text for run in p.runs)
         for k, v in replacements.items():
-            if k in p.text:
-                for r in p.runs:
-                    r.text = r.text.replace(k, v)
+            if k in full_text:
+                full_text = full_text.replace(k, v)
+        if p.runs:
+            p.runs[0].text = full_text
+            for i in range(1, len(p.runs)):
+                p.runs[i].text = ""
+
+    for p in doc.paragraphs:
+        replace_in_paragraph(p)
+
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
-                    for k, v in replacements.items():
-                        if k in p.text:
-                            for r in p.runs:
-                                r.text = r.text.replace(k, v)
+                    replace_in_paragraph(p)
 
 def generate_inspection_doc(data):
     doc = Document("Заявка на проведение инспекции.docx")
