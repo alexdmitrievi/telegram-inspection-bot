@@ -186,7 +186,7 @@ async def process_step(msg, context, text):
     if context.user_data["step"] < len(questions):
         await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
-else:
+    else:
     summary = "\n".join([
         f"{questions[i]}: {answers[i+1 if i == 0 else i]}"
         for i in range(len(questions))
