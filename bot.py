@@ -127,7 +127,7 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
 
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     text = update.message.text.strip().lower()
 
     use_cache = (
@@ -138,8 +138,16 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if use_cache:
         answers = list(context.user_data["cached"].values())
+        context.user_data["answers"] = answers
     else:
         answers = context.user_data.get("answers", [])
+        context.user_data["answers"] = answers
+
+    reordered = reorder_answers(answers)
+    save_profile(reordered)
+    file = generate_inspection_doc(reordered)
+    await update.message.reply_document(document=open(file, "rb"))
+    return ConversationHandler.END
 
     reordered = reorder_answers(answers)
     save_profile(reordered)
