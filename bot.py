@@ -130,10 +130,11 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
 
-    # Использовать кэш — только если пользователь на шаге 0 (то есть он выбрал "✅ Да" в самом начале)
+    # Если пользователь на шаге 0 (т.е. сразу после /start) и выбрал "да", тогда используем кэш
     if "да" in text and context.user_data.get("step") == 0 and "cached" in context.user_data:
         answers = list(context.user_data["cached"].values())
     else:
+        # В противном случае — использовать введённые вручную ответы
         answers = context.user_data.get("answers", [])
 
     reordered = reorder_answers(answers)
