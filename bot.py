@@ -128,10 +128,15 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return BLOCK_INPUT
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
+    text = update.message.text.strip().lower()
 
-    # Используем кэш ТОЛЬКО если пользователь находится в самом начале (step == 0)
-    if "да" in text and context.user_data.get("step") == 0 and "cached" in context.user_data:
+    use_cache = (
+        text in ["да", "✅ да"] and 
+        context.user_data.get("step") == 0 and 
+        "cached" in context.user_data
+    )
+
+    if use_cache:
         answers = list(context.user_data["cached"].values())
     else:
         answers = context.user_data.get("answers", [])
