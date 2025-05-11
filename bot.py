@@ -168,9 +168,14 @@ async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await process_step(update.message, context, update.message.text)
 
 async def process_step(msg, context, text):
-    step = context.user_data["step"]
-    current_answers = context.user_data.get("answers", {})
-    
+    step = context.user_data.get("step", 0)
+
+    # Гарантируем, что answers — это словарь
+    if not isinstance(context.user_data.get("answers"), dict):
+        context.user_data["answers"] = {}
+
+    current_answers = context.user_data["answers"]
+
     key_order = [
         "{{TNVED_CODE}}", "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
@@ -182,19 +187,26 @@ async def process_step(msg, context, text):
         current_answers["{{TNVED_CODE}}"] = tnved
         current_answers["{{PRODUCT_NAME}}"] = product
     else:
-        current_answers[key_order[step + 1]] = text.strip()
+        key = key_order[step + 1]  # +1 потому что на 0 шаге записываются сразу два поля
+        current_answers[key] = text.strip()
 
     context.user_data["answers"] = current_answers
-    context.user_data["step"] += 1
+    context.user_data["step"] = step + 1
 
     if context.user_data["step"] < len(questions):
         await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
     else:
-        summary = "\n".join([f"{questions[i]}: {current_answers.get(key_order[i+1 if i == 0 else i], '—')}" for i in range(len(questions))])
+        summary = "\n".join([
+            f"{questions[i]}: {current_answers.get(key_order[i+1 if i == 0 else i], '—')}"
+            for i in range(len(questions))
+        ])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup([["🔄 Перезапустить", "да", "нет"]], resize_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup(
+                [["🔄 Перезапустить", "да", "нет"]],
+                resize_keyboard=True
+            )
         )
         return CONFIRMING
 
