@@ -123,13 +123,19 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return BLOCK_INPUT
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "да" in update.message.text.lower() and "cached" in context.user_data:
+    text = update.message.text.lower()
+
+    # Использовать кэш — только если пользователь на шаге 0 (то есть он выбрал "✅ Да" в самом начале)
+    if "да" in text and context.user_data.get("step") == 0 and "cached" in context.user_data:
         answers = list(context.user_data["cached"].values())
-        file = generate_inspection_doc(answers)
-        await update.message.reply_document(document=open(file, "rb"))
-        return ConversationHandler.END
     else:
-        return await prompt_product_choice(update, context)
+        answers = context.user_data.get("answers", [])
+
+    reordered = reorder_answers(answers)
+    save_profile(reordered)
+    file = generate_inspection_doc(reordered)
+    await update.message.reply_document(document=open(file, "rb"))
+    return ConversationHandler.END
 
 async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(name.capitalize(), callback_data=name)]
