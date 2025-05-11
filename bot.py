@@ -87,10 +87,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
+
     if "да" in text:
-        if context.user_data.get("cached"):
+        if 'cached' in context.user_data and context.user_data.get("step") == 0:
+            # если пользователь действительно выбрал использовать кэш
             answers = list(context.user_data["cached"].values())
         else:
+            # иначе — используем текущие ответы
             answers = context.user_data["answers"]
 
         reordered = reorder_answers(answers)
