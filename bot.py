@@ -5,36 +5,22 @@ import json
 import tempfile
 import re
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ContextTypes, ConversationHandler, filters, CallbackQueryHandler
 )
 from docx import Document
-from docx.shared import RGBColor
 import nest_asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-(ASKING, CONFIRMING) = range(2)
+# Состояния
+SELECT_TEMPLATE, ASKING, CONFIRMING, BLOCK_INPUT, BLOCK_CONFIRM = range(5)
 PROFILE_PATH = "user_profile.json"
 
-product_to_tnved = {
-    "лук": "0703101900", "помидор": "0702000000", "томат": "0702000000",
-    "капуста": "0701909000", "капуста белокочанная": "0704901000", "огурец": "0707009000",
-    "редис": "0706109000", "морковь": "0706101000", "перец": "0709601000",
-    "картофель": "0701905000", "баклажан": "0709300000", "свекла": "0706109000",
-    "кукуруза": "0709909000", "кабачок": "0709909000", "патиссон": "0709909000",
-    "фасоль": "0708200000", "чеснок": "0703200000", "зелень": "0709990000",
-    "шпинат": "0709700000", "кинза": "0709990000", "укроп": "0709990000",
-    "виноград": "0806101000", "черешня": "0809201000", "вишня": "0809290000",
-    "дыня": "0807190000", "арбуз": "0807110000", "яблоко": "0808108000",
-    "груша": "0808209000", "айва": "0808400000", "слива": "0809400000",
-    "абрикос": "0809100000", "персик": "0809300000", "инжир": "0804200000",
-    "хурма": "0810907500", "лимон": "0805500000", "мандарины": "0805201000"
-}
-
+# Вопросы для инспекции
 questions = [
     "Выберите или введите наименование товара",
     "Введите массу партии в тоннах",
@@ -47,214 +33,195 @@ questions = [
     "Введите дату исходящего письма и инспекции"
 ]
 
+# Сопоставление с переменными в Word
 mapping_keys = [
     "{{TNVED_CODE}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}", "{{CONTRACT_INFO}}",
     "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}", "{{PRODUCT_NAME}}"
 ]
 
-def reorder_answers(raw_answers):
+# Справочник ТН ВЭД
+product_to_tnved = {
+    "лук": "0703101900", "помидор": "0702000000", "томат": "0702000000",
+    "огурец": "0707009000", "перец": "0709601000", "морковь": "0706101000",
+    "капуста": "0701909000", "яблоко": "0808108000", "груша": "0808209000",
+    "инжир": "0804200000", "арбуз": "0807110000", "виноград": "0806101000"
+}
+def detect_tnved_code(name):
+    name = name.lower()
+    for key, code in product_to_tnved.items():
+        if key in name:
+            return code
+    return "0808108000"
+
+def reorder_answers(raw):
     return [
-        raw_answers[0],   # TNVED_CODE
-        raw_answers[2],   # WEIGHT
-        raw_answers[3],   # PLACES
-        raw_answers[4],   # VEHICLE
-        raw_answers[5],   # CONTRACT_INFO
-        raw_answers[6],   # SENDER
-        raw_answers[7],   # DOCS
-        raw_answers[8],   # EXTRA_INFO
-        raw_answers[9],   # DATE
-        raw_answers[1],   # PRODUCT_NAME
+        raw[0], raw[2], raw[3], raw[4], raw[5],
+        raw[6], raw[7], raw[8], raw[9], raw[1],
     ]
 
-async def log_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Получено сообщение: {update}")
+def save_profile(data):
+    with open(PROFILE_PATH, "w", encoding="utf-8") as f:
+        json.dump(dict(zip(mapping_keys, data)), f, ensure_ascii=False, indent=2)
 
+def replace_all(doc, replacements):
+    for p in doc.paragraphs:
+        for k, v in replacements.items():
+            if k in p.text:
+                for r in p.runs:
+                    r.text = r.text.replace(k, v)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    for k, v in replacements.items():
+                        if k in p.text:
+                            for r in p.runs:
+                                r.text = r.text.replace(k, v)
+
+def generate_inspection_doc(data):
+    doc = Document("Заявка на проведение инспекции.docx")
+    replace_all(doc, dict(zip(mapping_keys, data)))
+    out = tempfile.mktemp(suffix=".docx")
+    doc.save(out)
+    return out
+
+def generate_statement_doc(blocks):
+    doc = Document("Заявление на осмотр.docx")
+    replace_all(doc, {"{{BLOCKS}}": "\n".join(blocks)})
+    out = tempfile.mktemp(suffix=".docx")
+    doc.save(out)
+    return out
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    context.user_data['answers'] = []
-    context.user_data['step'] = 0
+    reply_markup = ReplyKeyboardMarkup([
+        ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
+    ], resize_keyboard=True)
+    await update.message.reply_text("Выберите шаблон:", reply_markup=reply_markup)
+    return SELECT_TEMPLATE
 
-    if os.path.exists(PROFILE_PATH):
-        with open(PROFILE_PATH, 'r', encoding='utf-8') as f:
-            context.user_data['cached'] = json.load(f)
-        await update.message.reply_text(
-            "🧠 Использовать данные из последней заявки?",
-            reply_markup=ReplyKeyboardMarkup([["✅ Да", "✏ Ввести заново"]], resize_keyboard=True)
-        )
-        return CONFIRMING
+async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    if "инспекц" in text:
+        context.user_data["template"] = "inspection"
+        context.user_data["answers"] = []
+        context.user_data["step"] = 0
+
+        # Если есть кэш
+        if os.path.exists(PROFILE_PATH):
+            with open(PROFILE_PATH, "r", encoding="utf-8") as f:
+                context.user_data["cached"] = json.load(f)
+            reply_markup = ReplyKeyboardMarkup([["✅ Да", "✏ Ввести заново"]], resize_keyboard=True)
+            await update.message.reply_text("🧠 Использовать данные из последней заявки?", reply_markup=reply_markup)
+            return CONFIRMING
+        else:
+            return await prompt_product_choice(update, context)
+    else:
+        context.user_data["template"] = "statement"
+        context.user_data["blocks"] = []
+        context.user_data["block_step"] = 0
+        await update.message.reply_text("Введите госномер:")
+        return BLOCK_INPUT
+
+async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "да" in update.message.text.lower() and "cached" in context.user_data:
+        answers = list(context.user_data["cached"].values())
+        file = generate_inspection_doc(answers)
+        await update.message.reply_document(document=open(file, "rb"))
+        return ConversationHandler.END
     else:
         return await prompt_product_choice(update, context)
 
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-
-    if "да" in text:
-        if 'cached' in context.user_data and context.user_data.get("step") == 0:
-            # если пользователь действительно выбрал использовать кэш
-            answers = list(context.user_data["cached"].values())
-        else:
-            # иначе — используем текущие ответы
-            answers = context.user_data["answers"]
-
-        reordered = reorder_answers(answers)
-        save_profile(reordered)
-        output_files = generate_docs(reordered)
-        for path in output_files:
-            await update.message.reply_document(document=open(path, "rb"))
-        return ConversationHandler.END
-
-    await update.message.reply_text("Ок, начнём заново.")
-    return await start(update, context)
-
 async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton(name.capitalize(), callback_data=name)]
-        for name in list(product_to_tnved.keys())[:10]
-    ]
-    await update.message.reply_text(
-        "Выберите наименование товара или введите вручную:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    keyboard = [[InlineKeyboardButton(name.capitalize(), callback_data=name)]
+                for name in list(product_to_tnved.keys())[:6]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Выберите товар или введите вручную:", reply_markup=reply_markup)
     return ASKING
 
 async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     return await process_step(query.message, context, query.data)
-
 async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text.lower().strip() == "🔄 перезапустить бота":
-        return await start(update, context)
-    return await process_step(update.message, context, text)
+    return await process_step(update.message, context, update.message.text)
 
 async def process_step(msg, context, text):
-    step = context.user_data['step']
-    answers = context.user_data['answers']
+    step = context.user_data["step"]
+    answers = context.user_data["answers"]
 
     if step == 0:
-        product_name = text.strip()
-        tnved_code = detect_tnved_code(product_name)
+        tnved_code = detect_tnved_code(text.strip())
         answers.append(tnved_code)
-        answers.append(product_name)
+        answers.append(text.strip())
     else:
-        answers.append(validate_input(text, step))
+        answers.append(text.strip())
 
-    context.user_data['step'] += 1
+    context.user_data["step"] += 1
 
-    if context.user_data['step'] < len(questions):
-        await msg.reply_text(
-            questions[context.user_data['step']],
-            reply_markup=ReplyKeyboardMarkup([["\ud83d\udd04 Перезапустить бота"]], resize_keyboard=True)
-        )
+    if context.user_data["step"] < len(questions):
+        await msg.reply_text(questions[context.user_data["step"]])
         return ASKING
     else:
         reordered = reorder_answers(answers)
         save_profile(reordered)
-        summary = "\n".join([
-            f"{questions[i]}\n\u27a1 {answers[i+1 if i == 0 else i]}"
-            for i in range(len(questions))
-        ])
-        await msg.reply_text(
-            f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup([["\ud83d\udd04 Перезапустить бота"]], resize_keyboard=True)
-        )
-        return CONFIRMING
+        file = generate_inspection_doc(reordered)
+        await msg.reply_document(document=open(file, "rb"))
+        return ConversationHandler.END
 
-def detect_tnved_code(name):
-    name = name.lower()
-    for keyword, code in product_to_tnved.items():
-        if keyword in name:
-            return code
-    return "0808108000"
+# === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
 
-def validate_input(text, step):
-    try:
-        if step == 1:
-            return re.sub(r"[^0-9.,]", "", text).replace(",", ".")
-        elif step == 2:
-            return re.sub(r"\D", "", text)
-        elif step == 8:
-            d = re.search(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", text)
-            return datetime.strptime(d.group(), "%d.%m.%Y").strftime("%d.%m.%Y") if d else text
-        elif step == 5:
-            return text.upper()
-        else:
-            return text.strip()
-    except Exception as e:
-        logger.error(f"Ошибка валидации: {e}")
-        return text.strip()
+async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    step = context.user_data.get("block_step", 0)
+    if step == 0:
+        context.user_data["v"] = update.message.text.strip()
+        context.user_data["block_step"] = 1
+        await update.message.reply_text("Введите документы:")
+        return BLOCK_INPUT
+    elif step == 1:
+        context.user_data["d"] = update.message.text.strip()
+        context.user_data["block_step"] = 2
+        await update.message.reply_text("Введите товар:")
+        return BLOCK_INPUT
+    else:
+        product = update.message.text.strip()
+        context.user_data["blocks"].append(f"г/н {context.user_data['v']} по {context.user_data['d']}, товар: {product}")
+        context.user_data["block_step"] = 0
+        reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
+        await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
+        return BLOCK_CONFIRM
 
-def save_profile(answers):
-    try:
-        with open(PROFILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(dict(zip(mapping_keys, answers)), f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении профиля: {e}")
-
-def generate_docs(answers):
-    replacements = dict(zip(mapping_keys, answers))
-    result_files = []
-    for template_path in ["Заявка на проведение инспекции.docx", "Заявление на осмотр.docx"]:
-        doc = Document(template_path)
-
-        # Замена в параграфах
-        for para in doc.paragraphs:
-            for key, val in replacements.items():
-                if key in para.text:
-                    inline = para.runs
-                    for i in range(len(inline)):
-                        if key in inline[i].text:
-                            inline[i].text = inline[i].text.replace(key, val)
-
-        # Замена в таблицах
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for para in cell.paragraphs:
-                        for key, val in replacements.items():
-                            if key in para.text:
-                                inline = para.runs
-                                for i in range(len(inline)):
-                                    if key in inline[i].text:
-                                        inline[i].text = inline[i].text.replace(key, val)
-
-        output_path = tempfile.mktemp(suffix=".docx")
-        doc.save(output_path)
-        result_files.append(output_path)
-    return result_files
+async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "да" in update.message.text.lower():
+        await update.message.reply_text("Введите госномер:")
+        return BLOCK_INPUT
+    else:
+        file = generate_statement_doc(context.user_data["blocks"])
+        await update.message.reply_document(document=open(file, "rb"))
+        return ConversationHandler.END
 
 async def run():
-    TOKEN = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(TOKEN).build()
+    token = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(token).build()
 
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            SELECT_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_template)],
+            CONFIRMING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
             ASKING: [
                 CallbackQueryHandler(handle_inline_selection),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)
             ],
-            CONFIRMING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)
-            ],
+            BLOCK_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, block_input)],
+            BLOCK_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_blocks)],
         },
-        fallbacks=[MessageHandler(filters.Regex("\ud83d\udd04 Перезапустить бота"), start)],
+        fallbacks=[CommandHandler("start", start)],
     )
 
     app.add_handler(conv)
-    app.add_handler(CommandHandler("restart", start))
-    app.add_handler(MessageHandler(filters.ALL, log_all_updates))
-
-    await app.bot.set_my_commands([
-        BotCommand("start", "Начать заполнение заявки"),
-        BotCommand("restart", "🔄 Перезапустить бота")
-    ])
+    await app.bot.set_my_commands([BotCommand("start", "Начать заполнение заявки")])
     await app.run_polling()
 
 if __name__ == '__main__':
-    try:
-        nest_asyncio.apply()
-        asyncio.get_event_loop().run_until_complete(run())
-    except Exception as e:
-        logger.error(f"Критическая ошибка запуска: {e}")
+    nest_asyncio.apply()
+    asyncio.run(run())
