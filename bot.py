@@ -305,10 +305,8 @@ async def run():
     )
 
     app.add_handler(conv_handler)
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+
+    await app.run_polling()
 
 if __name__ == '__main__':
     nest_asyncio.apply()
