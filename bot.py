@@ -176,18 +176,27 @@ async def process_step(msg, context, text):
 
     current_answers = context.user_data["answers"]
 
+async def process_step(msg, context, text):
+    step = context.user_data.get("step", 0)
+
+    # Гарантируем, что answers — это словарь
+    if not isinstance(context.user_data.get("answers"), dict):
+        context.user_data["answers"] = {}
+
+    current_answers = context.user_data["answers"]
+
     key_order = [
-        "{{TNVED_CODE}}", "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
+        "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
     ]
 
     if step == 0:
         product = text.strip()
         tnved = detect_tnved_code(product)
-        current_answers["{{TNVED_CODE}}"] = tnved
         current_answers["{{PRODUCT_NAME}}"] = product
+        current_answers["{{TNVED_CODE}}"] = tnved
     else:
-        key = key_order[step + 1]  # +1 потому что на 0 шаге записываются сразу два поля
+        key = key_order[step]
         current_answers[key] = text.strip()
 
     context.user_data["answers"] = current_answers
@@ -198,7 +207,7 @@ async def process_step(msg, context, text):
         return ASKING
     else:
         summary = "\n".join([
-            f"{questions[i]}: {current_answers.get(key_order[i+1 if i == 0 else i], '—')}"
+            f"{questions[i]}: {current_answers.get(key_order[i], '—')}"
             for i in range(len(questions))
         ])
         await msg.reply_text(
@@ -209,8 +218,6 @@ async def process_step(msg, context, text):
             )
         )
         return CONFIRMING
-
-from datetime import datetime
 
 def generate_inspection_doc_from_dict(replacements):
     template_path = "Заявка на проведение инспекции.docx"
