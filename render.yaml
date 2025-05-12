@@ -5,6 +5,9 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python bot.py"
     plan: free
-    envVars: []  # Удаляем токен отсюда — переменная будет задана вручную на Render
+    envVars:
+      - key: BOT_TOKEN
+        value: <твой_токен_бота>
+
 
 
