@@ -86,7 +86,11 @@ def replace_all(doc, replacements):
 def generate_statement_doc(blocks):
     template_path = "Заявление на осмотр.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_path = f"/mnt/data/Заявление_на_осмотр_{timestamp}.docx"
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
+
     doc = Document(template_path)
     replace_all(doc, {"{{BLOCKS}}": "\n".join(blocks)})
     doc.save(output_path)
@@ -211,12 +215,15 @@ from datetime import datetime
 def generate_inspection_doc_from_dict(replacements):
     template_path = "Заявка на проведение инспекции.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_path = f"/mnt/data/Заявка_на_проведение_инспекции_{timestamp}.docx"
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, f"Заявка_на_проведение_инспекции_{timestamp}.docx")
+
     doc = Document(template_path)
     replace_all(doc, replacements)
     doc.save(output_path)
     return output_path
-
 
 # === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
 
