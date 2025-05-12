@@ -189,7 +189,7 @@ async def process_step(msg, context, text):
     current_answers = context.user_data["answers"]
 
     key_order = [
-        "{{TNVED_CODE}}", "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
+        "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
     ]
 
@@ -199,7 +199,7 @@ async def process_step(msg, context, text):
         current_answers["{{TNVED_CODE}}"] = tnved
         current_answers["{{PRODUCT_NAME}}"] = product
     else:
-        key = key_order[step + 1]
+        key = key_order[step - 1]
         current_answers[key] = text.strip()
 
     context.user_data["answers"] = current_answers
@@ -210,13 +210,13 @@ async def process_step(msg, context, text):
         return ASKING
     else:
         summary = "\n".join([
-            f"{questions[i]}: {current_answers.get(key_order[i+1 if i == 0 else i], '—')}"
+            f"{questions[i]}: {current_answers.get(key_order[i - 1] if i > 0 else '{{PRODUCT_NAME}}', '—')}"
             for i in range(len(questions))
         ])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
             reply_markup=ReplyKeyboardMarkup([
-                ["\U0001F504 Перезапустить", "да", "нет"]
+                ["🔄 Перезапустить", "да", "нет"]
             ], resize_keyboard=True)
         )
         return CONFIRMING
