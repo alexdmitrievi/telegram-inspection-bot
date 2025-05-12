@@ -1,7 +1,7 @@
 import os
-import logging
-import asyncio
 import json
+import asyncio
+import logging
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -11,8 +11,6 @@ from telegram.ext import (
 from docx import Document
 from docx.shared import Inches
 import nest_asyncio
-
-# logger.info(f"[BLOCK_INPUT] Step: {step}, User: {update.effective_user.id}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,11 +30,6 @@ questions = [
     "Введите дату исходящего письма и инспекции"
 ]
 
-mapping_keys = [
-    "{{TNVED_CODE}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}", "{{CONTRACT_INFO}}",
-    "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}", "{{PRODUCT_NAME}}"
-]
-
 product_to_tnved = {
     "лук": "0703101900", "помидор": "0702000000", "томат": "0702000000",
     "огурец": "0707009000", "перец": "0709601000", "морковь": "0706101000",
@@ -53,7 +46,7 @@ def detect_tnved_code(name):
 
 def save_profile(data):
     with open(PROFILE_PATH, "w", encoding="utf-8") as f:
-        json.dump(dict(zip(mapping_keys, data)), f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def replace_all(doc, replacements):
     def replace_in_paragraph(p):
@@ -68,7 +61,6 @@ def replace_all(doc, replacements):
 
     for p in doc.paragraphs:
         replace_in_paragraph(p)
-
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -76,7 +68,6 @@ def replace_all(doc, replacements):
                     replace_in_paragraph(p)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Пользователь {update.effective_user.id} отправил /start")
     context.user_data.clear()
     reply_markup = ReplyKeyboardMarkup([
         ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
@@ -86,27 +77,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
-
     if "инспекц" in text:
-        context.user_data.clear()
         context.user_data["template"] = "inspection"
-        context.user_data["answers"] = []
+        context.user_data["answers"] = {}
         context.user_data["step"] = 0
-
-        if os.path.exists(PROFILE_PATH):
-            with open(PROFILE_PATH, "r", encoding="utf-8") as f:
-                context.user_data["cached"] = json.load(f)
-            reply_markup = ReplyKeyboardMarkup([["\u2705 Да", "\u270F Ввести заново"]], resize_keyboard=True)
-            await update.message.reply_text("\U0001F9E0 Использовать данные из последней заявки?", reply_markup=reply_markup)
-            return CONFIRMING
-        else:
-            return await prompt_product_choice(update, context)
-
-    elif "ввести заново" in text:
-        context.user_data["answers"] = []
-        context.user_data["step"] = 0
-        return await prompt_product_choice(update, context)
-
+        return await ask_question(update, context)
     else:
         context.user_data["template"] = "statement"
         context.user_data["blocks"] = []
@@ -114,40 +89,12 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
 
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
-    answers = context.user_data.get("answers", {})
-
-    if text in ["да", "\u2705 да"] and context.user_data.get("step") == 0 and "cached" in context.user_data:
-        answers = context.user_data["cached"]
-        context.user_data["answers"] = answers
-
-    save_profile(answers)
-    file = generate_inspection_doc_from_dict(answers)
-    await update.message.reply_document(document=open(file, "rb"))
-    return ConversationHandler.END
-
-async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton(name.capitalize(), callback_data=name)]
-                for name in list(product_to_tnved.keys())[:6]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите товар или введите вручную:", reply_markup=reply_markup)
-    return ASKING
-
-async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    return await process_step(query.message, context, query.data)
-
 async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await process_step(update.message, context, update.message.text)
 
 async def process_step(msg, context, text):
     step = context.user_data.get("step", 0)
-    if not isinstance(context.user_data.get("answers"), dict):
-        context.user_data["answers"] = {}
-    current_answers = context.user_data["answers"]
-
+    answers = context.user_data.get("answers", {})
     key_order = [
         "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
@@ -155,14 +102,13 @@ async def process_step(msg, context, text):
 
     if step == 0:
         product = text.strip()
-        tnved = detect_tnved_code(product)
-        current_answers["{{PRODUCT_NAME}}"] = product
-        current_answers["{{TNVED_CODE}}"] = tnved
+        answers["{{PRODUCT_NAME}}"] = product
+        answers["{{TNVED_CODE}}"] = detect_tnved_code(product)
     else:
         key = key_order[step]
-        current_answers[key] = text.strip()
+        answers[key] = text.strip()
 
-    context.user_data["answers"] = current_answers
+    context.user_data["answers"] = answers
     context.user_data["step"] = step + 1
 
     if context.user_data["step"] < len(questions):
@@ -170,155 +116,121 @@ async def process_step(msg, context, text):
         return ASKING
     else:
         summary = "\n".join([
-            f"{questions[i]}: {current_answers.get(key_order[i], '—')}"
+            f"{questions[i]}: {answers.get(key_order[i], '—')}"
             for i in range(len(questions))
         ])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup([["\U0001F501 Перезапустить", "да", "нет"]], resize_keyboard=True)
+            reply_markup=ReplyKeyboardMarkup([["да", "нет"]], resize_keyboard=True)
         )
         return CONFIRMING
 
-async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    step = context.user_data.get("block_step", 0)
-
-    if step == 0:
-        context.user_data["v"] = update.message.text.strip()
-        context.user_data["block_step"] = 1
-        await update.message.reply_text("Введите документы:")
-        return BLOCK_INPUT
-
-    elif step == 1:
-        context.user_data["d"] = update.message.text.strip()
-        context.user_data["block_step"] = 2
-        await update.message.reply_text("Введите товар:")
-        return BLOCK_INPUT
-
-    elif step == 2:
-        context.user_data["product"] = update.message.text.strip()
-        if "statement_date" not in context.user_data:
-            context.user_data["block_step"] = 3
-            await update.message.reply_text("Введите дату заявления и осмотра:")
-            return BLOCK_INPUT
-        else:
-            context.user_data["blocks"].append({
-                "{{VEHICLE}}": context.user_data["v"],
-                "{{DOCS}}": context.user_data["d"],
-                "{{PRODUCT_NAME}}": context.user_data["product"]
-            })
-            context.user_data["block_step"] = 0
-            reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
-            await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
-            return BLOCK_CONFIRM
-
-    elif step == 3:
-        context.user_data["statement_date"] = update.message.text.strip()
-        context.user_data["blocks"].append({
-            "{{VEHICLE}}": context.user_data["v"],
-            "{{DOCS}}": context.user_data["d"],
-            "{{PRODUCT_NAME}}": context.user_data["product"]
-        })
-        context.user_data["block_step"] = 0
-        reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
-        await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
-        return BLOCK_CONFIRM
-
-async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-
-    if "да" in text:
-        await update.message.reply_text("Введите госномер:")
-        return BLOCK_INPUT
-
-    elif "нет" in text:
-        file = generate_statement_doc(
-            context.user_data["blocks"],
-            context.user_data.get("statement_date", "—")
-        )
+async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.lower() == "да":
+        data = context.user_data["answers"]
+        save_profile(data)
+        file = generate_inspection_doc_from_dict(data)
         await update.message.reply_document(document=open(file, "rb"))
-        return ConversationHandler.END
-
-    else:
-        await update.message.reply_text("Пожалуйста, выберите: «Да» или «Нет».")
-        return BLOCK_CONFIRM
-
-def generate_statement_doc(blocks, date):
-    from docx.shared import Inches
-    template_path = "Заявление на осмотр.docx"
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
-
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(f"❌ Шаблон не найден: {template_path}")
-
-    doc = Document(template_path)
-    found = False
-
-    for i, p in enumerate(doc.paragraphs):
-        if "{{BLOCKS}}" in p.text:
-            found = True
-            parent = p._element.getparent()
-            idx = parent.index(p._element)
-            parent.remove(p._element)
-
-            table = doc.add_table(rows=1, cols=3)
-            table.style = "Table Grid"
-            table.allow_autofit = False
-
-            hdr_cells = table.rows[0].cells
-            hdr_cells[0].text = "Госномер"
-            hdr_cells[1].text = "Документы"
-            hdr_cells[2].text = "Товар"
-
-            for block in blocks:
-                row_cells = table.add_row().cells
-                row_cells[0].text = block.get("{{VEHICLE}}", "")
-                row_cells[1].text = block.get("{{DOCS}}", "")
-                row_cells[2].text = block.get("{{PRODUCT_NAME}}", "")
-
-            parent.insert(idx, table._element)
-            break
-
-    if not found:
-        raise ValueError("⚠️ В шаблоне не найден маркер {{BLOCKS}}")
-
-    replace_all(doc, {"{{DATE}}": date})
-    doc.save(output_path)
-    return output_path
+    return ConversationHandler.END
 
 def generate_inspection_doc_from_dict(replacements):
     template_path = "Заявка на проведение инспекции.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"Заявка_на_проведение_инспекции_{timestamp}.docx")
+    output_path = os.path.join(output_dir, f"Заявка_на_инспекцию_{timestamp}.docx")
     doc = Document(template_path)
     replace_all(doc, replacements)
     doc.save(output_path)
     return output_path
 
-async def run():
-    app = ApplicationBuilder().token("7548023133:AAFfDrnLlF340dAfqrhfjfs8UF4_4NG7f84").build()
+async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    step = context.user_data.get("block_step", 0)
+    if step == 0:
+        context.user_data["v"] = update.message.text.strip()
+        context.user_data["block_step"] = 1
+        await update.message.reply_text("Введите документы:")
+        return BLOCK_INPUT
+    elif step == 1:
+        context.user_data["d"] = update.message.text.strip()
+        context.user_data["block_step"] = 2
+        await update.message.reply_text("Введите товар:")
+        return BLOCK_INPUT
+    elif step == 2:
+        context.user_data["product"] = update.message.text.strip()
+        context.user_data["block_step"] = 3
+        await update.message.reply_text("Введите дату заявления:")
+        return BLOCK_INPUT
+    elif step == 3:
+        context.user_data["date"] = update.message.text.strip()
+        context.user_data.setdefault("blocks", []).append({
+            "{{VEHICLE}}": context.user_data["v"],
+            "{{DOCS}}": context.user_data["d"],
+            "{{PRODUCT_NAME}}": context.user_data["product"]
+        })
+        context.user_data["statement_date"] = context.user_data["date"]
+        context.user_data["block_step"] = 0
+        await update.message.reply_text("Добавить ещё?", reply_markup=ReplyKeyboardMarkup(
+            [["Да", "Нет"]], resize_keyboard=True
+        ))
+        return BLOCK_CONFIRM
 
-    # ВАЖНО: удалить Webhook перед polling
+async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.text.lower() == "да":
+        await update.message.reply_text("Введите госномер:")
+        return BLOCK_INPUT
+    else:
+        file = generate_statement_doc(context.user_data["blocks"], context.user_data["statement_date"])
+        await update.message.reply_document(document=open(file, "rb"))
+        return ConversationHandler.END
+
+def generate_statement_doc(blocks, date):
+    template_path = "Заявление на осмотр.docx"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
+    doc = Document(template_path)
+
+    for i, p in enumerate(doc.paragraphs):
+        if "{{BLOCKS}}" in p.text:
+            parent = p._element.getparent()
+            idx = parent.index(p._element)
+            parent.remove(p._element)
+
+            table = doc.add_table(rows=1, cols=3)
+            table.style = "Table Grid"
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = "Госномер"
+            hdr_cells[1].text = "Документы"
+            hdr_cells[2].text = "Товар"
+
+            for block in blocks:
+                row = table.add_row().cells
+                row[0].text = block.get("{{VEHICLE}}", "")
+                row[1].text = block.get("{{DOCS}}", "")
+                row[2].text = block.get("{{PRODUCT_NAME}}", "")
+            parent.insert(idx, table._element)
+            break
+
+    replace_all(doc, {"{{DATE}}": date})
+    doc.save(output_path)
+    return output_path
+
+async def run():
+    app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
     await app.bot.delete_webhook(drop_pending_updates=True)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
+            ASKING: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)],
             CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
-            ASKING: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question),
-                CallbackQueryHandler(handle_inline_selection)
-            ],
             BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
             BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
         },
         fallbacks=[CommandHandler("start", start)],
-        per_message=True
     )
 
     app.add_handler(conv_handler)
@@ -327,5 +239,6 @@ async def run():
 if __name__ == '__main__':
     nest_asyncio.apply()
     asyncio.run(run())
+
 
 
