@@ -1,11 +1,16 @@
 import os
 import asyncio
+import logging
 import nest_asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+# Инициализация логгера
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("▶️ Получена команда /start")
+    logger.info("▶️ Получена команда /start")
     await update.message.reply_text("Бот работает ✅")
 
 async def run():
@@ -17,4 +22,5 @@ async def run():
 if __name__ == '__main__':
     nest_asyncio.apply()
     asyncio.run(run())
+
 
