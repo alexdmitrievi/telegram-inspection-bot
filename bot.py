@@ -12,9 +12,6 @@ from docx import Document
 from docx.shared import Inches
 import nest_asyncio
 
-
-logger.info(f"[BLOCK_INPUT] Step: {step}, User: {update.effective_user.id}")
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
