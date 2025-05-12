@@ -179,15 +179,6 @@ async def process_step(msg, context, text):
 
     current_answers = context.user_data["answers"]
 
-async def process_step(msg, context, text):
-    step = context.user_data.get("step", 0)
-
-    # Гарантируем, что answers — это словарь
-    if not isinstance(context.user_data.get("answers"), dict):
-        context.user_data["answers"] = {}
-
-    current_answers = context.user_data["answers"]
-
     key_order = [
         "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
@@ -294,6 +285,30 @@ def generate_statement_doc(blocks, date):
     })
     doc.save(output_path)
     return output_path
+
+async def run():
+    app = ApplicationBuilder().token("7548023133:AAFfDrnLlF340dAfqrhfjfs8UF4_4NG7f84").build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
+            CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
+            ASKING: [
+                MessageHandler(filters.TEXT & (~filters.COMMAND), ask_question),
+                CallbackQueryHandler(handle_inline_selection)
+            ],
+            BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
+            BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+
+    app.add_handler(conv_handler)
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
 
 if __name__ == '__main__':
     nest_asyncio.apply()
