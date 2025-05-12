@@ -193,7 +193,7 @@ async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif step == 2:
         context.user_data["product"] = update.message.text.strip()
         if "statement_date" not in context.user_data:
-            context.user_data["ask_date"] = True
+            context.user_data["block_step"] = 3
             await update.message.reply_text("Введите дату заявления и осмотра:")
             return BLOCK_INPUT
         else:
@@ -203,11 +203,11 @@ async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "{{PRODUCT_NAME}}": context.user_data["product"]
             })
             context.user_data["block_step"] = 0
-            reply_markup = ReplyKeyboardMarkup([["\u2795 Да", "\u2705 Нет"]], resize_keyboard=True)
+            reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
             await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
             return BLOCK_CONFIRM
 
-    elif context.user_data.get("ask_date"):
+    elif step == 3:
         context.user_data["statement_date"] = update.message.text.strip()
         context.user_data["blocks"].append({
             "{{VEHICLE}}": context.user_data["v"],
@@ -215,8 +215,7 @@ async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "{{PRODUCT_NAME}}": context.user_data["product"]
         })
         context.user_data["block_step"] = 0
-        context.user_data.pop("ask_date", None)
-        reply_markup = ReplyKeyboardMarkup([["\u2795 Да", "\u2705 Нет"]], resize_keyboard=True)
+        reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
         await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
         return BLOCK_CONFIRM
 
