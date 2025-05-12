@@ -240,6 +240,7 @@ async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return BLOCK_CONFIRM
 
 def generate_statement_doc(blocks, date):
+    from docx.shared import Inches  # перемещено сюда, чтобы избежать конфликта
     template_path = "Заявление на осмотр.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = "output"
@@ -257,7 +258,7 @@ def generate_statement_doc(blocks, date):
             table = doc.add_table(rows=1, cols=3)
             table.style = "Table Grid"
             table.allow_autofit = False
-            widths = [docx.shared.Inches(1.8), docx.shared.Inches(2.2), docx.shared.Inches(2.3)]
+            widths = [Inches(1.8), Inches(2.2), Inches(2.3)]  # исправлено здесь
 
             hdr_cells = table.rows[0].cells
             hdr_cells[0].text = "Госномер"
