@@ -83,7 +83,7 @@ def replace_all(doc, replacements):
                 for p in cell.paragraphs:
                     replace_in_paragraph(p)
 
-def generate_statement_doc(blocks):
+def generate_statement_doc(blocks, date):
     template_path = "Заявление на осмотр.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = "output"
@@ -92,7 +92,10 @@ def generate_statement_doc(blocks):
     output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
 
     doc = Document(template_path)
-    replace_all(doc, {"{{BLOCKS}}": "\n".join(blocks)})
+    replace_all(doc, {
+        "{{BLOCKS}}": "\n".join(blocks),
+        "{{DATE}}": date
+    })
     doc.save(output_path)
     return output_path
 
@@ -232,59 +235,65 @@ def generate_inspection_doc_from_dict(replacements):
     doc.save(output_path)
     return output_path
 
-# === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
-
 async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = context.user_data.get("block_step", 0)
+
     if step == 0:
         context.user_data["v"] = update.message.text.strip()
         context.user_data["block_step"] = 1
         await update.message.reply_text("Введите документы:")
         return BLOCK_INPUT
+
     elif step == 1:
         context.user_data["d"] = update.message.text.strip()
         context.user_data["block_step"] = 2
         await update.message.reply_text("Введите товар:")
         return BLOCK_INPUT
-    else:
+
+    elif step == 2:
         product = update.message.text.strip()
-        context.user_data["blocks"].append(f"г/н {context.user_data['v']} по {context.user_data['d']}, товар: {product}")
+        context.user_data["blocks"].append(
+            f"г/н {context.user_data['v']} по {context.user_data['d']}, товар: {product}"
+        )
+        context.user_data["block_step"] = 3
+        await update.message.reply_text("Введите дату заявления и осмотра:")
+        return BLOCK_INPUT
+
+    elif step == 3:
+        context.user_data["statement_date"] = update.message.text.strip()
         context.user_data["block_step"] = 0
         reply_markup = ReplyKeyboardMarkup([["➕ Да", "✅ Нет"]], resize_keyboard=True)
         await update.message.reply_text("Добавить ещё?", reply_markup=reply_markup)
         return BLOCK_CONFIRM
+
 
 async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "да" in update.message.text.lower():
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
     else:
-        file = generate_statement_doc(context.user_data["blocks"])
+        file = generate_statement_doc(
+            context.user_data["blocks"],
+            context.user_data.get("statement_date", "—")
+        )
         await update.message.reply_document(document=open(file, "rb"))
         return ConversationHandler.END
 
-async def run():
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+def generate_statement_doc(blocks, date):
+    template_path = "Заявление на осмотр.docx"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
 
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            SELECT_TEMPLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_template)],
-            CONFIRMING: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm)],
-            ASKING: [
-                CallbackQueryHandler(handle_inline_selection),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)
-            ],
-            BLOCK_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, block_input)],
-            BLOCK_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_blocks)],
-        },
-        fallbacks=[CommandHandler("start", start)],
-    )
+    output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
 
-    app.add_handler(conv)
-    await app.bot.set_my_commands([BotCommand("start", "Начать заполнение заявки")])
-    await app.run_polling()
+    doc = Document(template_path)
+    replace_all(doc, {
+        "{{BLOCKS}}": "\n".join(blocks),
+        "{{DATE}}": date
+    })
+    doc.save(output_path)
+    return output_path
 
 if __name__ == '__main__':
     nest_asyncio.apply()
