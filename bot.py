@@ -65,22 +65,24 @@ def save_profile(data):
         json.dump(dict(zip(mapping_keys, data)), f, ensure_ascii=False, indent=2)
 
 def replace_all(doc, replacements):
-    def replace_in_paragraph(p):
-        for key, value in replacements.items():
-            if key in p.text:
-                inline = p.runs
-                for i in range(len(inline)):
-                    if key in inline[i].text:
-                        inline[i].text = inline[i].text.replace(key, value)
+    def process_paragraph(paragraph):
+        full_text = ''.join(run.text for run in paragraph.runs)
+        for key, val in replacements.items():
+            if key in full_text:
+                full_text = full_text.replace(key, val)
+        for i in range(len(paragraph.runs)):
+            paragraph.runs[i].text = ''
+        if paragraph.runs:
+            paragraph.runs[0].text = full_text
 
-    for p in doc.paragraphs:
-        replace_in_paragraph(p)
+    for paragraph in doc.paragraphs:
+        process_paragraph(paragraph)
 
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                for p in cell.paragraphs:
-                    replace_in_paragraph(p)
+                for paragraph in cell.paragraphs:
+                    process_paragraph(paragraph)
 
 def generate_statement_doc_with_date(replacements):
     template_path = "Заявление на осмотр.docx"
