@@ -234,22 +234,37 @@ def generate_statement_doc(blocks, date):
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
+
     doc = Document(template_path)
 
-    # Генерируем все строки блоков
-    block_lines = []
-    for block in blocks:
-        line = f"- г/н {block['{{VEHICLE}}']} по {block['{{DOCS}}']}, товар: {block['{{PRODUCT_NAME}}']}."
-        block_lines.append(line)
+    # Найти параграф с маркером {{BLOCKS}} и заменить его таблицей
+    for i, p in enumerate(doc.paragraphs):
+        if "{{BLOCKS}}" in p.text:
+            parent = p._element.getparent()
+            idx = parent.index(p._element)
+            parent.remove(p._element)
 
-    full_text = "\n".join(block_lines)
+            table = doc.add_table(rows=1, cols=3)
+            table.style = "Table Grid"
+            table.allow_autofit = False
+            widths = [docx.shared.Inches(1.8), docx.shared.Inches(2.2), docx.shared.Inches(2.3)]
 
-    # Заменяем в шаблоне
-    replace_all(doc, {
-        "{{BLOCKS}}": full_text,
-        "{{DATE}}": date
-    })
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = "Госномер"
+            hdr_cells[1].text = "Документы"
+            hdr_cells[2].text = "Товар"
 
+            for block in blocks:
+                row_cells = table.add_row().cells
+                row_cells[0].text = block["{{VEHICLE}}"]
+                row_cells[1].text = block["{{DOCS}}"]
+                row_cells[2].text = block["{{PRODUCT_NAME}}"]
+
+            # Вставить таблицу на место удалённого параграфа
+            parent.insert(idx, table._element)
+            break
+
+    replace_all(doc, {"{{DATE}}": date})
     doc.save(output_path)
     return output_path
 
