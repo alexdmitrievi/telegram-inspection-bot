@@ -186,23 +186,22 @@ async def process_step(msg, context, text):
     if not isinstance(context.user_data.get("answers"), dict):
         context.user_data["answers"] = {}
 
-    current_answers = context.user_data["answers"]
+    answers = context.user_data["answers"]
 
     key_order = [
-        "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
+        "{{TNVED_CODE}}", "{{PRODUCT_NAME}}", "{{WEIGHT}}", "{{PLACES}}", "{{VEHICLE}}",
         "{{CONTRACT_INFO}}", "{{SENDER}}", "{{DOCS}}", "{{EXTRA_INFO}}", "{{DATE}}"
     ]
 
     if step == 0:
         product = text.strip()
-        tnved = detect_tnved_code(product)
-        current_answers["{{TNVED_CODE}}"] = tnved
-        current_answers["{{PRODUCT_NAME}}"] = product
+        answers["{{PRODUCT_NAME}}"] = product
+        answers["{{TNVED_CODE}}"] = detect_tnved_code(product)
     else:
-        key = key_order[step - 1]
-        current_answers[key] = text.strip()
+        key = key_order[step + 1]  # сдвиг на 1, так как 0-й шаг — двойной
+        answers[key] = text.strip()
 
-    context.user_data["answers"] = current_answers
+    context.user_data["answers"] = answers
     context.user_data["step"] = step + 1
 
     if context.user_data["step"] < len(questions):
@@ -210,7 +209,7 @@ async def process_step(msg, context, text):
         return ASKING
     else:
         summary = "\n".join([
-            f"{questions[i]}: {current_answers.get(key_order[i - 1] if i > 0 else '{{PRODUCT_NAME}}', '—')}"
+            f"{questions[i]}: {answers.get(key_order[i + 1 if i > 0 else 1], '—')}"
             for i in range(len(questions))
         ])
         await msg.reply_text(
