@@ -119,7 +119,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
 
-    if "инспекц" in text:
+    if "инспекц" in text or "заявка" in text:
         context.user_data.clear()
         context.user_data["template"] = "inspection"
         context.user_data["answers"] = []
@@ -128,8 +128,8 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(PROFILE_PATH):
             with open(PROFILE_PATH, "r", encoding="utf-8") as f:
                 context.user_data["cached"] = json.load(f)
-            reply_markup = ReplyKeyboardMarkup([["\u2705 Да", "\u270F Ввести заново"]], resize_keyboard=True)
-            await update.message.reply_text("\U0001F9E0 Использовать данные из последней заявки?", reply_markup=reply_markup)
+            reply_markup = ReplyKeyboardMarkup([["✅ Да", "✏ Ввести заново"]], resize_keyboard=True)
+            await update.message.reply_text("🧠 Использовать данные из последней заявки?", reply_markup=reply_markup)
             return CONFIRMING
         else:
             return await prompt_product_choice(update, context)
