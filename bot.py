@@ -236,10 +236,20 @@ def generate_statement_doc(blocks, date):
     output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
     doc = Document(template_path)
 
+    # Генерируем все строки блоков
+    block_lines = []
     for block in blocks:
-        replace_all(doc, block)
+        line = f"- г/н {block['{{VEHICLE}}']} по {block['{{DOCS}}']}, товар: {block['{{PRODUCT_NAME}}']}."
+        block_lines.append(line)
 
-    replace_all(doc, {"{{DATE}}": date})
+    full_text = "\n".join(block_lines)
+
+    # Заменяем в шаблоне
+    replace_all(doc, {
+        "{{BLOCKS}}": full_text,
+        "{{DATE}}": date
+    })
+
     doc.save(output_path)
     return output_path
 
