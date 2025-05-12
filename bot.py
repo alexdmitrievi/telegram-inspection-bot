@@ -220,13 +220,23 @@ async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return BLOCK_CONFIRM
 
 async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if "да" in update.message.text.lower():
+    text = update.message.text.lower()
+
+    if "да" in text:
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
-    else:
-        file = generate_statement_doc(context.user_data["blocks"], context.user_data.get("statement_date", "—"))
+
+    elif "нет" in text:
+        file = generate_statement_doc(
+            context.user_data["blocks"],
+            context.user_data.get("statement_date", "—")
+        )
         await update.message.reply_document(document=open(file, "rb"))
         return ConversationHandler.END
+
+    else:
+        await update.message.reply_text("Пожалуйста, выберите: «Да» или «Нет».")
+        return BLOCK_CONFIRM
 
 def generate_statement_doc(blocks, date):
     template_path = "Заявление на осмотр.docx"
