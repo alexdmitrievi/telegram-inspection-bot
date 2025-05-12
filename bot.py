@@ -299,7 +299,7 @@ def generate_inspection_doc_from_dict(replacements):
     return output_path
 
 async def run():
-    app = ApplicationBuilder().token("7548023133:AAFfDrnLlF340dAfqrhfjfs8UF4_4NG7f84").build()
+    app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
 
     # ВАЖНО: удалить Webhook перед polling
     await app.bot.delete_webhook(drop_pending_updates=True)
