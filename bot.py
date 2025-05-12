@@ -83,19 +83,15 @@ def replace_all(doc, replacements):
                 for p in cell.paragraphs:
                     replace_in_paragraph(p)
 
-def generate_inspection_doc(data):
-    doc = Document("Заявка на проведение инспекции.docx")
-    replace_all(doc, dict(zip(mapping_keys, data)))
-    out = tempfile.mktemp(suffix=".docx")
-    doc.save(out)
-    return out
-
 def generate_statement_doc(blocks):
-    doc = Document("Заявление на осмотр.docx")
+    template_path = "Заявление на осмотр.docx"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_path = f"/mnt/data/Заявление_на_осмотр_{timestamp}.docx"
+    doc = Document(template_path)
     replace_all(doc, {"{{BLOCKS}}": "\n".join(blocks)})
-    out = tempfile.mktemp(suffix=".docx")
-    doc.save(out)
-    return out
+    doc.save(output_path)
+    return output_path
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     reply_markup = ReplyKeyboardMarkup([
@@ -210,12 +206,16 @@ async def process_step(msg, context, text):
         )
         return CONFIRMING
 
+from datetime import datetime
+
 def generate_inspection_doc_from_dict(replacements):
-    doc = Document("Заявка на проведение инспекции.docx")
+    template_path = "Заявка на проведение инспекции.docx"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_path = f"/mnt/data/Заявка_на_проведение_инспекции_{timestamp}.docx"
+    doc = Document(template_path)
     replace_all(doc, replacements)
-    out = tempfile.mktemp(suffix=".docx")
-    doc.save(out)
-    return out
+    doc.save(output_path)
+    return output_path
 
 
 # === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
