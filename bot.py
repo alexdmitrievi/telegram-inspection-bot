@@ -53,18 +53,24 @@ def save_profile(data):
         json.dump(dict(zip(mapping_keys, data)), f, ensure_ascii=False, indent=2)
 
 def replace_all(doc, replacements):
-    for p in doc.paragraphs:
+    def replace_in_paragraph(p):
+        full_text = "".join(run.text for run in p.runs)
+        replaced = full_text
         for k, v in replacements.items():
-            if k in p.text:
-                inline = p.runs
-                for i in range(len(inline)):
-                    if k in inline[i].text:
-                        inline[i].text = inline[i].text.replace(k, v)
+            replaced = replaced.replace(k, v)
+        if replaced != full_text:
+            for i in range(len(p.runs)):
+                p.runs[i].text = ""
+            p.runs[0].text = replaced
+
+    for p in doc.paragraphs:
+        replace_in_paragraph(p)
 
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                replace_all(cell, replacements)
+                for p in cell.paragraphs:
+                    replace_in_paragraph(p)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
