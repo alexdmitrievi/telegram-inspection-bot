@@ -75,10 +75,10 @@ def replace_all(doc, replacements):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     reply_markup = ReplyKeyboardMarkup([
-        ["\U0001F4E6 Заявка на проведение инспекции", "\U0001F4C4 Заявление на осмотр"]
+        ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
     ], resize_keyboard=True)
     await update.message.reply_text("Выберите шаблон:", reply_markup=reply_markup)
-    return SELECT_TEMPLATE
+    return SELECT_TEMPLATE  # уже корректно
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
@@ -244,7 +244,6 @@ def generate_statement_doc(blocks, date):
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
-
     doc = Document(template_path)
 
     # Найти параграф с маркером {{BLOCKS}} и заменить его таблицей
@@ -293,19 +292,20 @@ async def run():
     app = ApplicationBuilder().token("7548023133:AAFfDrnLlF340dAfqrhfjfs8UF4_4NG7f84").build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
-            CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
-            ASKING: [
-                MessageHandler(filters.TEXT & (~filters.COMMAND), ask_question),
-                CallbackQueryHandler(handle_inline_selection)
-            ],
-            BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
-            BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
-        },
-        fallbacks=[CommandHandler("start", start)],
-    )
+    entry_points=[CommandHandler("start", start)],
+    states={
+        SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
+        CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
+        ASKING: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question),
+            CallbackQueryHandler(handle_inline_selection)
+        ],
+        BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
+        BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
+    },
+    fallbacks=[CommandHandler("start", start)],
+    per_message=True  # ВАЖНО: позволяет обработать /start во время ожидания inline
+)
 
     app.add_handler(conv_handler)
     await app.run_polling()
