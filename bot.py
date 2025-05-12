@@ -66,14 +66,12 @@ def save_profile(data):
 
 def replace_all(doc, replacements):
     def replace_in_paragraph(p):
-        full_text = "".join(run.text for run in p.runs)
-        for k, v in replacements.items():
-            if k in full_text:
-                full_text = full_text.replace(k, v)
-        if p.runs:
-            p.runs[0].text = full_text
-            for i in range(1, len(p.runs)):
-                p.runs[i].text = ""
+        for key, value in replacements.items():
+            if key in p.text:
+                inline = p.runs
+                for i in range(len(inline)):
+                    if key in inline[i].text:
+                        inline[i].text = inline[i].text.replace(key, value)
 
     for p in doc.paragraphs:
         replace_in_paragraph(p)
@@ -253,10 +251,10 @@ async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def set_block_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["date"] = update.message.text.strip()
-    blocks = "\n".join(context.user_data["blocks"])
+    blocks = context.user_data.get("blocks", [])
     replacements = {
-        "{{BLOCKS}}": blocks,
-        "{{DATE}}": context.user_data["date"]
+        "{{BLOCKS}}": "\n".join(blocks),
+        "{{DATE}}": context.user_data.get("date", "")
     }
     file = generate_statement_doc_with_date(replacements)
     await update.message.reply_document(document=open(file, "rb"))
