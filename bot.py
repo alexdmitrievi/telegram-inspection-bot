@@ -171,7 +171,12 @@ async def prompt_product_choice(update: Update, context: ContextTypes.DEFAULT_TY
     keyboard = [[InlineKeyboardButton(name.capitalize(), callback_data=name)]
                 for name in list(product_to_tnved.keys())[:6]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите товар или введите вручную:", reply_markup=reply_markup)
+
+    if update.message:
+        await update.message.reply_text("Выберите товар или введите вручную:", reply_markup=reply_markup)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text("Выберите товар или введите вручную:", reply_markup=reply_markup)
+
     return ASKING
 
 async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
