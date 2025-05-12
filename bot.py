@@ -74,12 +74,13 @@ def replace_all(doc, replacements):
                     replace_in_paragraph(p)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Пользователь {update.effective_user.id} отправил /start")
     context.user_data.clear()
     reply_markup = ReplyKeyboardMarkup([
         ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
     ], resize_keyboard=True)
     await update.message.reply_text("Выберите шаблон:", reply_markup=reply_markup)
-    return SELECT_TEMPLATE  # уже корректно
+    return SELECT_TEMPLATE
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
@@ -293,21 +294,24 @@ def generate_inspection_doc_from_dict(replacements):
 async def run():
     app = ApplicationBuilder().token("7548023133:AAFfDrnLlF340dAfqrhfjfs8UF4_4NG7f84").build()
 
+    # ВАЖНО: удалить Webhook перед polling
+    await app.bot.delete_webhook(drop_pending_updates=True)
+
     conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start)],
-    states={
-        SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
-        CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
-        ASKING: [
-            MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question),
-            CallbackQueryHandler(handle_inline_selection)
-        ],
-        BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
-        BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
-    },
-    fallbacks=[CommandHandler("start", start)],
-    per_message=True  # ВАЖНО: позволяет обработать /start во время ожидания inline
-)
+        entry_points=[CommandHandler("start", start)],
+        states={
+            SELECT_TEMPLATE: [MessageHandler(filters.TEXT, select_template)],
+            CONFIRMING: [MessageHandler(filters.TEXT, confirm)],
+            ASKING: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question),
+                CallbackQueryHandler(handle_inline_selection)
+            ],
+            BLOCK_INPUT: [MessageHandler(filters.TEXT, block_input)],
+            BLOCK_CONFIRM: [MessageHandler(filters.TEXT, confirm_blocks)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_message=True
+    )
 
     app.add_handler(conv_handler)
     await app.run_polling()
