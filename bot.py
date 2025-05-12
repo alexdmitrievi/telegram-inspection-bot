@@ -74,12 +74,19 @@ def replace_all(doc, replacements):
                     replace_in_paragraph(p)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("▶️ Получена команда /start")  # Отладочное сообщение
     logger.info(f"Пользователь {update.effective_user.id} отправил /start")
+
     context.user_data.clear()
-    reply_markup = ReplyKeyboardMarkup([
-        ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
-    ], resize_keyboard=True)
-    await update.message.reply_text("Выберите шаблон:", reply_markup=reply_markup)
+    reply_markup = ReplyKeyboardMarkup(
+        [["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await update.message.reply_text(
+        "Выберите шаблон:",
+        reply_markup=reply_markup
+    )
     return SELECT_TEMPLATE
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
