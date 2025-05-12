@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Состояния
-SELECT_TEMPLATE, ASKING, CONFIRMING, BLOCK_INPUT, BLOCK_CONFIRM = range(5)
+SELECT_TEMPLATE, ASKING, CONFIRMING, BLOCK_INPUT, BLOCK_CONFIRM, BLOCK_DATE = range(6)
 PROFILE_PATH = "user_profile.json"
 
 # Вопросы для инспекции
@@ -46,6 +46,7 @@ product_to_tnved = {
     "капуста": "0701909000", "яблоко": "0808108000", "груша": "0808209000",
     "инжир": "0804200000", "арбуз": "0807110000", "виноград": "0806101000"
 }
+
 def detect_tnved_code(name):
     name = name.lower()
     for key, code in product_to_tnved.items():
@@ -83,7 +84,7 @@ def replace_all(doc, replacements):
                 for p in cell.paragraphs:
                     replace_in_paragraph(p)
 
-def generate_statement_doc(blocks):
+def generate_statement_doc_with_date(replacements):
     template_path = "Заявление на осмотр.docx"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = "output"
@@ -92,23 +93,36 @@ def generate_statement_doc(blocks):
     output_path = os.path.join(output_dir, f"Заявление_на_осмотр_{timestamp}.docx")
 
     doc = Document(template_path)
-    replace_all(doc, {"{{BLOCKS}}": "\n".join(blocks)})
+    replace_all(doc, replacements)
+    doc.save(output_path)
+    return output_path
+
+def generate_inspection_doc_from_dict(replacements):
+    template_path = "Заявка на проведение инспекции.docx"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    output_path = os.path.join(output_dir, f"Заявка_на_проведение_инспекции_{timestamp}.docx")
+
+    doc = Document(template_path)
+    replace_all(doc, replacements)
     doc.save(output_path)
     return output_path
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     reply_markup = ReplyKeyboardMarkup([
-        ["📦 Заявка на проведение инспекции", "📄 Заявление на осмотр"]
+        ["\U0001F4E6 Заявка на проведение инспекции", "\U0001F4C4 Заявление на осмотр"]
     ], resize_keyboard=True)
     await update.message.reply_text("Выберите шаблон:", reply_markup=reply_markup)
     return SELECT_TEMPLATE
 
 async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
-    
+
     if "инспекц" in text:
-        context.user_data.clear()  # очищаем всё, включая старые answers и cached
+        context.user_data.clear()
         context.user_data["template"] = "inspection"
         context.user_data["answers"] = []
         context.user_data["step"] = 0
@@ -116,8 +130,8 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(PROFILE_PATH):
             with open(PROFILE_PATH, "r", encoding="utf-8") as f:
                 context.user_data["cached"] = json.load(f)
-            reply_markup = ReplyKeyboardMarkup([["✅ Да", "✏ Ввести заново"]], resize_keyboard=True)
-            await update.message.reply_text("🧠 Использовать данные из последней заявки?", reply_markup=reply_markup)
+            reply_markup = ReplyKeyboardMarkup([["\u2705 Да", "\u270F Ввести заново"]], resize_keyboard=True)
+            await update.message.reply_text("\U0001F9E0 Использовать данные из последней заявки?", reply_markup=reply_markup)
             return CONFIRMING
         else:
             return await prompt_product_choice(update, context)
@@ -134,12 +148,12 @@ async def select_template(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
 
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE): 
+async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().lower()
     answers = context.user_data.get("answers", {})
 
     use_cache = (
-        text in ["да", "✅ да"] and
+        text in ["да", "\u2705 да"] and
         context.user_data.get("step") == 0 and
         "cached" in context.user_data
     )
@@ -164,13 +178,13 @@ async def handle_inline_selection(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
     return await process_step(query.message, context, query.data)
+
 async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await process_step(update.message, context, update.message.text)
 
 async def process_step(msg, context, text):
     step = context.user_data.get("step", 0)
 
-    # Гарантируем, что answers — это словарь
     if not isinstance(context.user_data.get("answers"), dict):
         context.user_data["answers"] = {}
 
@@ -187,7 +201,7 @@ async def process_step(msg, context, text):
         current_answers["{{TNVED_CODE}}"] = tnved
         current_answers["{{PRODUCT_NAME}}"] = product
     else:
-        key = key_order[step + 1]  # +1 потому что на 0 шаге записываются сразу два поля
+        key = key_order[step + 1]
         current_answers[key] = text.strip()
 
     context.user_data["answers"] = current_answers
@@ -203,29 +217,11 @@ async def process_step(msg, context, text):
         ])
         await msg.reply_text(
             f"Проверьте введённые данные:\n\n{summary}\n\nОтправить документы? (да/нет)",
-            reply_markup=ReplyKeyboardMarkup(
-                [["🔄 Перезапустить", "да", "нет"]],
-                resize_keyboard=True
-            )
+            reply_markup=ReplyKeyboardMarkup([
+                ["\U0001F504 Перезапустить", "да", "нет"]
+            ], resize_keyboard=True)
         )
         return CONFIRMING
-
-from datetime import datetime
-
-def generate_inspection_doc_from_dict(replacements):
-    template_path = "Заявка на проведение инспекции.docx"
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
-
-    output_path = os.path.join(output_dir, f"Заявка_на_проведение_инспекции_{timestamp}.docx")
-
-    doc = Document(template_path)
-    replace_all(doc, replacements)
-    doc.save(output_path)
-    return output_path
-
-# === ЛОГИКА ДЛЯ ЗАЯВЛЕНИЯ НА ОСМОТР ===
 
 async def block_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = context.user_data.get("block_step", 0)
@@ -252,9 +248,19 @@ async def confirm_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введите госномер:")
         return BLOCK_INPUT
     else:
-        file = generate_statement_doc(context.user_data["blocks"])
-        await update.message.reply_document(document=open(file, "rb"))
-        return ConversationHandler.END
+        await update.message.reply_text("Введите дату осмотра:")
+        return BLOCK_DATE
+
+async def set_block_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["date"] = update.message.text.strip()
+    blocks = "\n".join(context.user_data["blocks"])
+    replacements = {
+        "{{BLOCKS}}": blocks,
+        "{{DATE}}": context.user_data["date"]
+    }
+    file = generate_statement_doc_with_date(replacements)
+    await update.message.reply_document(document=open(file, "rb"))
+    return ConversationHandler.END
 
 async def run():
     token = os.getenv("BOT_TOKEN")
@@ -271,6 +277,7 @@ async def run():
             ],
             BLOCK_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, block_input)],
             BLOCK_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_blocks)],
+            BLOCK_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_block_date)],
         },
         fallbacks=[CommandHandler("start", start)],
     )
@@ -282,5 +289,6 @@ async def run():
 if __name__ == '__main__':
     nest_asyncio.apply()
     asyncio.run(run())
+
 
 
