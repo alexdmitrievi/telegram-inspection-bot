@@ -9,6 +9,7 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, filters, CallbackQueryHandler
 )
 from docx import Document
+from docx.shared import Inches
 import nest_asyncio
 
 logging.basicConfig(level=logging.INFO)
